@@ -1,0 +1,25 @@
+# Virtual environment
+cf-env/
+.venv/
+__pycache__/
+*.pyc
+
+# Lab data (do NOT commit)
+data/
+graphs/
+*.ifc
+*.pcd
+*.ply
+*.cypher
+*.dump
+
+# Secrets / local config
+.env
+*.local.json
+
+# Logs / OS / editor
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
