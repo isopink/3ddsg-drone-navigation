@@ -1,5 +1,8 @@
 # Virtual environment
 cf-env/
+
+# cflib TOC cache (auto-generated)
+cache/
 .venv/
 __pycache__/
 *.pyc
