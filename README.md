@@ -32,23 +32,26 @@ pytest
 
 ```
 src/ddsg_nav/
-  graph/      model.py, fake.py (3 rooms, 2 doors), neo4j_source.py (Step 4)
-  goal.py     "room A -> room C" goal parsing
+  graph/      model.py (rooms, doors, voxels), fake.py (3-room and floor-sized test graphs),
+              io.py (exchange format), source.py, transform.py (drone <-> graph frame),
+              neo4j_source.py (Step 4, not implemented)
+  goal.py     "room A -> room C" goal parsing (ids, names, aliases)
+  validate.py graph validation: explains why a graph cannot be planned on
   planner/    global_planner.py (room graph), local_planner.py (voxel A*), route.py,
-              collision.py (path / trajectory checks)
+              collision.py (path / trajectory checks), policy.py (unobserved voxels)
   sim/        scene.py (graph -> MuJoCo scene), quadrotor.py (controller)
   flight/     backend.py (interface), executor.py, safety.py
     backends/ crazyflie.py (real drone), mujoco_backend.py (simulation)
   viz/        o3d_viz.py (Open3D: voxels, doors, route, flown trajectory)
-scripts/      Step 0 flight tests, demo_sim.py, viz_routes.py
+scripts/      Step 0 flight tests, demo_sim.py, viz_routes.py, graph_tools.py, benchmark_planning.py
 tests/        unit tests (run without a drone)
 data/         lab graphs, never committed
-docs/media/   photos and videos
+docs/         graph_format.md, media/ (photos and videos)
 ```
 
 How it fits together:
 - **Graph**: rooms, doors and a voxel map (free / occupied / unknown). The fake graph and the future Neo4j graph produce the same `SceneGraph`, so planners do not change when the data source does.
-- **Planning**: the global planner finds the room sequence (networkx); the local planner runs A* on the voxels with 25 cm obstacle inflation, and unobserved voxels count as obstacles.
+- **Planning**: the global planner finds the room sequence (networkx); the local planner runs A* on the voxels, door to door, with an exact 25 cm safety margin and no corner cutting. By default unobserved voxels count as obstacles (see "Using real data").
 - **Flight**: `follow_path` talks only to the `DroneBackend` interface (speed capped at 0.3 m/s, always lands). The real Crazyflie and MuJoCo are interchangeable backends. Isaac Sim would be a third one.
 - Planners and the simulator run without a drone; only `crazyflie.py` needs `cflib` and hardware.
 
@@ -81,6 +84,30 @@ cf-env\Scripts\python scripts\viz_routes.py --show "go from A to C" --obstacle  
 </p>
 
 If a room's center is blocked (for example by the box in room B), the route starts or ends at the closest free point in that room instead.
+
+## Using real data
+
+Real data is not available yet, so the pipeline is built around a file export and checked on synthetic graphs. Whoever has the graph database exports one floor as a folder (`graph.json` + `voxels.npz`, see [docs/graph_format.md](docs/graph_format.md)); nothing else needs a database connection.
+
+```
+cf-env\Scripts\python scripts\graph_tools.py export-fake data\fake --large   # example export, 24 rooms
+cf-env\Scripts\python scripts\graph_tools.py validate data\fake              # why a graph can or cannot be planned on
+cf-env\Scripts\python scripts\graph_tools.py route data\fake "go from R0_0 to R5_3"
+```
+
+- **Validation** (`validate.py`) reports errors (a room with no flyable space, a door inside an obstacle, a door the drone cannot reach, rooms outside the grid), warnings (isolated or disconnected rooms, a mostly unobserved map, doors narrower than the margin) and statistics.
+- **Unobserved voxels** are a policy (`planner/policy.py`): `obstacle` (default, safest), `free`, or `free_in_rooms` (unobserved space inside a room is flyable, elsewhere it stays blocked; it can hide furniture that was never observed).
+- **Rooms** can be polygons and carry aliases (room number, IFC id), so "401호에서 302호로 가줘" works whatever the room is called in the database.
+- **Frames**: `graph/transform.py` relates the drone frame (take-off point and nose direction) to the graph frame.
+
+Planning time on a 30 m x 20 m floor with 24 rooms (`scripts/benchmark_planning.py`, this laptop):
+
+| Voxel size | Voxels | Route corner to corner (room by room) | One A* over the whole floor |
+|---|---|---|---|
+| 0.2 m | 183 thousand | 0.01 s | 1.9 s |
+| 0.1 m | 1.5 million | 0.14 s | 42 s |
+
+The room-by-room structure is what keeps planning fast; 0.2 m voxels are an option if a floor-wide search is ever needed.
 
 ## Scripts
 

@@ -4,8 +4,8 @@ NOT yet flight-tested: written from the Step 0 script and the cflib API, but the
 `scripts/step0_hover_test.py` flow is the one validated on hardware so far.
 Re-test with `--height 0.3` in a bright room over a textured floor before relying on it.
 
-Coordinates: graph coordinates. `origin` is where the drone's estimator frame
-(0, 0, 0) sits in graph coordinates, i.e. the take-off point.
+Coordinates: graph coordinates. `frame` says where the drone's estimator frame sits in
+the graph (take-off point and the direction the nose pointed): see graph/transform.py.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from cflib.crazyflie.syncLogger import SyncLogger
 from cflib.positioning.position_hl_commander import PositionHlCommander
 
 from ...graph.model import Point
+from ...graph.transform import Transform
 from .. import safety
 from ..backend import DroneBackend
 
@@ -30,12 +31,12 @@ class CrazyflieBackend(DroneBackend):
     def __init__(
         self,
         uri: str = DEFAULT_URI,
-        origin: Point = (0.0, 0.0, 0.0),
+        frame: Transform = Transform(),
         cache_dir: str = "./cache",
         min_battery: float = safety.MIN_BATTERY_V,
     ) -> None:
         self.uri = uri
-        self.origin = origin
+        self.frame = frame
         self.min_battery = min_battery
         self._cache_dir = cache_dir
         self._scf: SyncCrazyflie | None = None
@@ -105,7 +106,7 @@ class CrazyflieBackend(DroneBackend):
         self._pc = PositionHlCommander(self._scf, x=0.0, y=0.0, z=0.0, default_velocity=0.2)
         try:
             self._flying = True
-            self._pc.take_off(height=height - self.origin[2], velocity=0.2)
+            self._pc.take_off(height=self.frame.to_drone((0.0, 0.0, height))[2], velocity=0.2)
         except Exception:
             self.land()
             raise
@@ -113,16 +114,17 @@ class CrazyflieBackend(DroneBackend):
     def go_to(self, x: float, y: float, z: float, velocity: float) -> None:
         if self._pc is None or not self._flying:
             raise RuntimeError("not flying: call takeoff() first")
-        ox, oy, oz = self.origin
-        self._pc.go_to(x - ox, y - oy, z - oz, velocity=velocity)
+        dx, dy, dz = self.frame.to_drone((x, y, z))
+        self._pc.go_to(dx, dy, dz, velocity=velocity)
 
     def position(self) -> Point:
         self.connect()
         s = self._read_log(
             [("stateEstimate.x", "float"), ("stateEstimate.y", "float"), ("stateEstimate.z", "float")]
         )[0]
-        ox, oy, oz = self.origin
-        return (s["stateEstimate.x"] + ox, s["stateEstimate.y"] + oy, s["stateEstimate.z"] + oz)
+        return self.frame.to_graph(
+            (s["stateEstimate.x"], s["stateEstimate.y"], s["stateEstimate.z"])
+        )
 
     def land(self) -> None:
         if self._pc is not None and self._flying:
