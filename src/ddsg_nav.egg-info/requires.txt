@@ -1,0 +1,12 @@
+cflib
+networkx
+numpy
+
+[dev]
+pytest
+
+[neo4j]
+neo4j
+
+[viz]
+open3d

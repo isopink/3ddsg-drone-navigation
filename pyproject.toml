@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ddsg-nav"
+version = "0.1.0"
+description = "Indoor drone navigation (Crazyflie) on an IFC-based 3D dynamic scene graph"
+requires-python = ">=3.10"
+dependencies = [
+    "cflib",
+    "networkx",
+    "numpy",
+]
+
+[project.optional-dependencies]
+neo4j = ["neo4j"]
+viz = ["open3d"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

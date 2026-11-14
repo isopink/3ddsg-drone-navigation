@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: ddsg-nav
+Version: 0.1.0
+Summary: Indoor drone navigation (Crazyflie) on an IFC-based 3D dynamic scene graph
+Requires-Python: >=3.10
+Requires-Dist: cflib
+Requires-Dist: networkx
+Requires-Dist: numpy
+Provides-Extra: neo4j
+Requires-Dist: neo4j; extra == "neo4j"
+Provides-Extra: viz
+Requires-Dist: open3d; extra == "viz"
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"

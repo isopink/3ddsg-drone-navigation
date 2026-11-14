@@ -23,18 +23,39 @@ Crazyflie 2.1 + Flow deck v2 + Crazyradio PA, Windows, Python 3.12. On Windows, 
 ```
 py -3.12 -m venv cf-env
 cf-env\Scripts\activate
-pip install cfclient neo4j networkx numpy open3d
+pip install cfclient
+pip install -e ".[neo4j,viz,dev]"
+pytest
 ```
+
+## Project structure
+
+```
+src/ddsg_nav/
+  graph/      model.py, fake.py (Step 1), neo4j_source.py (Step 4)
+  goal.py     "room A -> room C" goal parsing
+  planner/    global_planner.py (room graph), local_planner.py (voxel A*)
+  viz/        Open3D visualization (Step 2)
+  flight/     safety.py, executor.py (Step 3)
+scripts/      Step 0 flight test scripts
+tests/        unit tests (run without a drone)
+data/         lab graphs, never committed
+docs/media/   photos and videos
+```
+
+The fake graph (Step 1) and the Neo4j graph (Step 4) share one interface, so the planners do not change when the data source does. Planner code is testable without a drone; only `flight/` depends on `cflib`.
 
 ## Scripts
 
 | File | Description |
 |---|---|
-| `step0_prop_test.py` | Firmware propeller test, no take-off |
-| `step0_hover_test.py` | Take off, hover, move forward, land |
+| `scripts/step0_prop_test.py` | Firmware propeller test, no take-off |
+| `scripts/step0_hover_test.py` | Take off, hover, move forward, land |
+
+Run from the repository root:
 
 ```
-cf-env\Scripts\python step0_hover_test.py --height 0.3 --distance 0.5 --hover-time 3
+cf-env\Scripts\python scripts\step0_hover_test.py --height 0.3 --distance 0.5 --hover-time 3
 ```
 
 It refuses to take off unless:

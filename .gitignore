@@ -7,8 +7,9 @@ cache/
 __pycache__/
 *.pyc
 
-# Lab data (do NOT commit)
-data/
+# Lab data (do NOT commit; only the placeholder is tracked)
+data/*
+!data/.gitkeep
 graphs/
 *.ifc
 *.pcd
