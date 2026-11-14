@@ -3,6 +3,12 @@ cf-env/
 
 # cflib TOC cache (auto-generated)
 cache/
+
+# Python packaging artifacts (auto-generated)
+*.egg-info/
+build/
+dist/
+.pytest_cache/
 .venv/
 __pycache__/
 *.pyc
