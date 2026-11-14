@@ -10,9 +10,9 @@ This repo covers the part that **takes the graph and flies the drone**. Graph co
 | Step | Description | Status |
 |---|---|---|
 | 0 | Setup, Crazyflie connection, hover / forward flight | Done |
-| 1 | Goal parsing + route planning on a fake graph | Planned |
+| 1 | Goal parsing + route planning on a fake graph | Done (tested in simulation) |
 | 2 | Collision check with Open3D visualization | Planned |
-| 3 | Real-drone test (virtual walls) | Planned |
+| 3 | Real-drone test (virtual walls) | Planned (backend written, not flight-tested) |
 | 4 | Connect the real graph (Neo4j) | Planned |
 | 5 | Re-planning for dynamic objects | Planned |
 
@@ -24,7 +24,7 @@ Crazyflie 2.1 + Flow deck v2 + Crazyradio PA, Windows, Python 3.12. On Windows, 
 py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
-pip install -e ".[neo4j,viz,dev]"
+pip install -e ".[neo4j,viz,sim,dev]"
 pytest
 ```
 
@@ -32,18 +32,35 @@ pytest
 
 ```
 src/ddsg_nav/
-  graph/      model.py, fake.py (Step 1), neo4j_source.py (Step 4)
+  graph/      model.py, fake.py (3 rooms, 2 doors), neo4j_source.py (Step 4)
   goal.py     "room A -> room C" goal parsing
-  planner/    global_planner.py (room graph), local_planner.py (voxel A*)
+  planner/    global_planner.py (room graph), local_planner.py (voxel A*), route.py
+  sim/        scene.py (graph -> MuJoCo scene), quadrotor.py (controller)
+  flight/     backend.py (interface), executor.py, safety.py
+    backends/ crazyflie.py (real drone), mujoco_backend.py (simulation)
   viz/        Open3D visualization (Step 2)
-  flight/     safety.py, executor.py (Step 3)
-scripts/      Step 0 flight test scripts
+scripts/      Step 0 flight tests, demo_sim.py
 tests/        unit tests (run without a drone)
 data/         lab graphs, never committed
 docs/media/   photos and videos
 ```
 
-The fake graph (Step 1) and the Neo4j graph (Step 4) share one interface, so the planners do not change when the data source does. Planner code is testable without a drone; only `flight/` depends on `cflib`.
+How it fits together:
+- **Graph**: rooms, doors and a voxel map (free / occupied / unknown). The fake graph and the future Neo4j graph produce the same `SceneGraph`, so planners do not change when the data source does.
+- **Planning**: the global planner finds the room sequence (networkx); the local planner runs A* on the voxels with 25 cm obstacle inflation, and unobserved voxels count as obstacles.
+- **Flight**: `follow_path` talks only to the `DroneBackend` interface (speed capped at 0.3 m/s, always lands). The real Crazyflie and MuJoCo are interchangeable backends. Isaac Sim would be a third one.
+- Planners and the simulator run without a drone; only `crazyflie.py` needs `cflib` and hardware.
+
+## Simulation demo
+
+Plans a route on the fake graph and flies it in MuJoCo (headless):
+
+```
+cf-env\Scripts\python scripts\demo_sim.py "go from A to C"
+cf-env\Scripts\python scripts\demo_sim.py "A방에서 C방으로" --obstacle
+```
+
+The simulated quadrotor uses a simple geometric controller and no sensor model, so it checks paths and control logic but does **not** reproduce Flow deck behavior (optical flow drift, divergence in the dark).
 
 ## Scripts
 

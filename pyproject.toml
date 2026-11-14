@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 neo4j = ["neo4j"]
 viz = ["open3d"]
+sim = ["mujoco"]
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]
