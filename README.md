@@ -1,24 +1,21 @@
 # 3DDSG Drone Navigation
 
-An indoor drone (**Crazyflie 2.1 + Flow deck**) that uses an IFC-based **3D Dynamic Scene Graph (3DDSG)** as its map:
-given "go from room A to room C", it plans a route and flies it without collisions.
+An indoor drone (**Crazyflie 2.1 + Flow deck**) that uses an IFC-based **3D Dynamic Scene Graph (3DDSG)** as its map: given "go from room A to room C", it plans a route and flies it without collisions.
 
-This repo covers the part that **takes the graph and flies the drone**. Graph construction and lab data are not included.
+This repo is the part that **takes the graph and flies the drone**. Graph construction and lab data are not included.
 
-## Progress
+| Step | Status |
+|---|---|
+| 0 Setup, hover and forward flight | Done |
+| 1 Goal parsing, route planning | Done |
+| 2 Collision check, Open3D visualization | Done |
+| 3 Virtual-room flight | Simulation, flight monitor and plan-vs-flown comparison done; real flight pending |
+| 4 Real graph (Neo4j) | Waiting for the graph export or schema |
+| 5 Re-planning for dynamic objects | Planned |
 
-| Step | Description | Status |
-|---|---|---|
-| 0 | Setup, Crazyflie connection, hover / forward flight | Done |
-| 1 | Goal parsing + route planning on a fake graph | Done (tested in simulation) |
-| 2 | Collision check with Open3D visualization | Done |
-| 3 | Real-drone test (virtual walls) | Planned (backend written, not flight-tested) |
-| 4 | Connect the real graph (Neo4j) | Planned |
-| 5 | Re-planning for dynamic objects | Planned |
+## Quick start
 
-## Setup
-
-Crazyflie 2.1 + Flow deck v2 + Crazyradio PA, Windows, Python 3.12. On Windows, install the Crazyradio libusb driver with Zadig.
+Windows, Python 3.12, Crazyflie 2.1 + Flow deck v2 + Crazyradio PA (install its libusb driver with Zadig).
 
 ```
 py -3.12 -m venv cf-env
@@ -26,113 +23,41 @@ cf-env\Scripts\activate
 pip install cfclient
 pip install -e ".[neo4j,viz,sim,dev]"
 pytest
-```
 
-## Project structure
-
-```
-src/ddsg_nav/
-  graph/      model.py (rooms, doors, voxels), fake.py (3-room and floor-sized test graphs),
-              io.py (exchange format), source.py, transform.py (drone <-> graph frame),
-              neo4j_source.py (Step 4, not implemented)
-  goal.py     "room A -> room C" goal parsing (ids, names, aliases)
-  validate.py graph validation: explains why a graph cannot be planned on
-  planner/    global_planner.py (room graph), local_planner.py (voxel A*), route.py,
-              collision.py (path / trajectory checks), policy.py (unobserved voxels)
-  sim/        scene.py (graph -> MuJoCo scene), quadrotor.py (controller)
-  flight/     backend.py (interface), executor.py, safety.py
-    backends/ crazyflie.py (real drone), mujoco_backend.py (simulation)
-  viz/        o3d_viz.py (Open3D: voxels, doors, route, flown trajectory)
-scripts/      Step 0 flight tests, demo_sim.py, viz_routes.py, graph_tools.py, benchmark_planning.py
-tests/        unit tests (run without a drone)
-data/         lab graphs, never committed
-docs/         graph_format.md, media/ (photos and videos)
-```
-
-How it fits together:
-- **Graph**: rooms, doors and a voxel map (free / occupied / unknown). The fake graph and the future Neo4j graph produce the same `SceneGraph`, so planners do not change when the data source does.
-- **Planning**: the global planner finds the room sequence (networkx); the local planner runs A* on the voxels, door to door, with an exact 25 cm safety margin and no corner cutting. By default unobserved voxels count as obstacles (see "Using real data").
-- **Flight**: `follow_path` talks only to the `DroneBackend` interface (speed capped at 0.3 m/s, always lands). The real Crazyflie and MuJoCo are interchangeable backends. Isaac Sim would be a third one.
-- Planners and the simulator run without a drone; only `crazyflie.py` needs `cflib` and hardware.
-
-## Simulation demo
-
-Plans a route on the fake graph and flies it in MuJoCo (headless):
-
-```
-cf-env\Scripts\python scripts\demo_sim.py "go from A to C"
-cf-env\Scripts\python scripts\demo_sim.py "A방에서 C방으로" --obstacle
-```
-
-The simulated quadrotor uses a simple geometric controller and no sensor model, so it checks paths and control logic but does **not** reproduce Flow deck behavior (optical flow drift, divergence in the dark).
-
-## Route visualization and collision check
-
-`scripts/viz_routes.py` plans every ordered room pair (6) at three flight heights (0.3, 0.5, 1.0 m), with and without an obstacle, and checks each path against the voxel map plus a 25 cm safety margin. Result: **0 hard collisions, 0 margin violations, 0 points outside the map in all 36 plans.**
-
-```
-cf-env\Scripts\python scripts\viz_routes.py                  # collision table
-cf-env\Scripts\python scripts\viz_routes.py --screenshots --sim   # also save PNGs with a simulated flight
-cf-env\Scripts\python scripts\viz_routes.py --show "go from A to C" --obstacle   # interactive window
+cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
+cf-env\Scripts\python scripts\fly_route.py --backend crazyflie --rooms 2 2 --depth 2 "A -> B"   # real drone
 ```
 
 <p align="center">
-  <img src="docs/media/route_A_to_C_obstacle_top.png" alt="Route A to C around an obstacle, top view" width="49%">
-  <img src="docs/media/route_A_to_C_obstacle_oblique.png" alt="Same route, cutaway view" width="49%">
+  <img src="docs/media/sim_flight.gif" alt="Simulated flight through three virtual rooms" width="49%">
+  <img src="docs/media/sim_flight_obstacle.gif" alt="Simulated flight around an obstacle" width="49%">
   <br>
-  <sub>Gray: walls and the box in room B · green: doors · red: planned route · blue: simulated flight</sub>
+  <sub>MuJoCo simulation. Red: planned route · blue: flown trail · orange: drone · <a href="docs/media/sim_flight.mp4">mp4</a>, <a href="docs/media/sim_flight_obstacle.mp4">mp4</a></sub>
 </p>
 
-If a room's center is blocked (for example by the box in room B), the route starts or ends at the closest free point in that room instead.
+## How it works
 
-## Using real data
+- **Graph**: rooms, doors and a voxel map (free / occupied / unobserved). Every data source produces the same `SceneGraph`, so the planners do not change with it.
+- **Planning**: room sequence over the room graph, then A* on the voxels door to door, with an exact 25 cm safety margin. Unobserved voxels count as obstacles by default; `free` and `free_in_rooms` are options.
+- **Flight**: `follow_path` talks to a `DroneBackend` (real Crazyflie or MuJoCo). Speed is capped at 0.3 m/s and the drone always lands. Pre-flight checks cover the Flow deck, battery, drone state and height sensor; a monitor checks battery, state, position and distance from the plan after every waypoint.
+- **Checked in simulation**: all 36 plans (6 room pairs, 3 heights, with and without an obstacle) have zero collisions. A simulated flight stays within 0.1 m of its plan.
 
-Real data is not available yet, so the pipeline is built around a file export and checked on synthetic graphs. Whoever has the graph database exports one floor as a folder (`graph.json` + `voxels.npz`, see [docs/graph_format.md](docs/graph_format.md)); nothing else needs a database connection.
+The simulation has no sensor model, so it does **not** reproduce Flow deck drift or failures in the dark. The real-drone backend is **not flight-tested yet**.
 
-```
-cf-env\Scripts\python scripts\graph_tools.py export-fake data\fake --large   # example export, 24 rooms
-cf-env\Scripts\python scripts\graph_tools.py validate data\fake              # why a graph can or cannot be planned on
-cf-env\Scripts\python scripts\graph_tools.py route data\fake "go from R0_0 to R5_3"
-```
+## Real data
 
-- **Validation** (`validate.py`) reports errors (a room with no flyable space, a door inside an obstacle, a door the drone cannot reach, rooms outside the grid), warnings (isolated or disconnected rooms, a mostly unobserved map, doors narrower than the margin) and statistics.
-- **Unobserved voxels** are a policy (`planner/policy.py`): `obstacle` (default, safest), `free`, or `free_in_rooms` (unobserved space inside a room is flyable, elsewhere it stays blocked; it can hide furniture that was never observed).
-- **Rooms** can be polygons and carry aliases (room number, IFC id), so "401호에서 302호로 가줘" works whatever the room is called in the database.
-- **Frames**: `graph/transform.py` relates the drone frame (take-off point and nose direction) to the graph frame.
-
-Planning time on a 30 m x 20 m floor with 24 rooms (`scripts/benchmark_planning.py`, this laptop):
-
-| Voxel size | Voxels | Route corner to corner (room by room) | One A* over the whole floor |
-|---|---|---|---|
-| 0.2 m | 183 thousand | 0.01 s | 1.9 s |
-| 0.1 m | 1.5 million | 0.14 s | 42 s |
-
-The room-by-room structure is what keeps planning fast; 0.2 m voxels are an option if a floor-wide search is ever needed.
-
-## Scripts
-
-| File | Description |
-|---|---|
-| `scripts/step0_prop_test.py` | Firmware propeller test, no take-off |
-| `scripts/step0_hover_test.py` | Take off, hover, move forward, land |
-
-Run from the repository root:
+Real data is not available yet. Export one floor as a folder (`graph.json` + `voxels.npz`, see [docs/graph_format.md](docs/graph_format.md)) and check it:
 
 ```
-cf-env\Scripts\python scripts\step0_hover_test.py --height 0.3 --distance 0.5 --hover-time 3
+cf-env\Scripts\python scripts\graph_tools.py validate <folder>
+cf-env\Scripts\python scripts\graph_tools.py route <folder> "401호에서 302호로 가줘"
 ```
 
-It refuses to take off unless:
-- the Flow deck is detected (`deck.bcFlow2`),
-- the battery is at least 3.7 V,
-- the drone is not locked, crashed or tumbled (`supervisor.info`),
-- the ground height sensor reads below 80 mm and is not frozen.
+`validate` explains why a graph cannot be planned on (blocked or unreachable doors, rooms with no flyable space, isolated rooms, mostly unobserved map). Rooms can be polygons and have aliases (room number, IFC id). Planning a 30 m x 20 m floor takes 0.14 s at 0.1 m voxels; one A* over the whole floor would take 42 s.
 
-It logs height, motor outputs, x/y and yaw during flight.
+## Flight results (Step 0)
 
-## Step 0 results
-
-Good lighting, textured floor. Values are the drone's own estimates; real distances were not measured.
+Good lighting, textured floor. All values are the drone's own estimates; real distances were not measured.
 
 | Flight | Max height | Commanded forward | Estimated forward |
 |---|---|---|---|
@@ -140,9 +65,7 @@ Good lighting, textured floor. Values are the drone's own estimates; real distan
 | Hover at 0.3 m + forward | 0.33 m | 0.5 m | 0.62 m |
 | Hover at 1.0 m + forward | 1.07 m | 0.3 m | 0.68 m |
 
-Height overshoots the target by 2 to 7 cm, and yaw drifts by up to about 10 degrees (the Flow deck heading is gyro-based).
-
-The position estimate seemed more accurate when flying higher (1 m) than lower (0.3 m). This was an observation during the flights and has not been verified with real measurements.
+Height overshoots by 2 to 7 cm and yaw drifts up to about 10 degrees (the heading is gyro-based).
 
 ## Lessons learned: flying in the dark
 
@@ -152,9 +75,18 @@ The position estimate seemed more accurate when flying higher (1 m) than lower (
   <sub>Flight attempt in the dark · <a href="docs/media/night_flight.mp4">mp4</a></sub>
 </p>
 
-In the dark, the drone lost its orientation and crashed. The optical flow sensor needs floor texture and light; without them the position estimate diverged, the height sensor froze at 201 mm, and the motors saturated.
+In the dark the drone lost its orientation and crashed: the position estimate diverged, the height sensor froze at 201 mm and the motors saturated. The optical flow sensor needs light and floor texture. Valid height is 0.2 to 3.0 m, and the Flow deck cannot see obstacles.
 
-Fly with **good lighting** and a **textured floor**. The Flow deck's valid height range is 0.2 to 3.0 m, and it cannot detect obstacles.
+## Layout
+
+```
+src/ddsg_nav/   graph/  goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/
+scripts/        fly_route.py  graph_tools.py  render_sim_video.py  viz_routes.py  demo_sim.py
+                benchmark_planning.py  step0_hover_test.py  step0_prop_test.py
+tests/          run without a drone
+data/           lab graphs, never committed
+docs/           graph_format.md, media/
+```
 
 ## References
 
