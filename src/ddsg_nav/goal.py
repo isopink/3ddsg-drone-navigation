@@ -33,7 +33,7 @@ class _Mention:
 def _find_mentions(text: str, graph: SceneGraph) -> list[_Mention]:
     found: list[_Mention] = []
     for room in graph.rooms.values():
-        for token in {room.id, room.name}:
+        for token in {room.id, room.name, *room.aliases}:
             flags = 0 if len(token) == 1 else re.IGNORECASE  # single letters: case-sensitive
             pattern = rf"(?<![A-Za-z0-9]){re.escape(token)}(?![A-Za-z0-9])"
             for m in re.finditer(pattern, text, flags):

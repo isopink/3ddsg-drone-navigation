@@ -141,6 +141,26 @@ def test_local_unknown_is_obstacle():
     assert path[-1] == (2.5, 1.5, 0.5)
 
 
+def test_local_does_not_cut_corners():
+    """A diagonal step may not squeeze between two blocked cells (which would clip a corner)."""
+    from ddsg_nav.planner.local_planner import _astar
+
+    blocked = np.zeros((5, 5, 1), dtype=bool)
+    blocked[2, 1, 0] = True  # two cells touching only at a corner
+    blocked[1, 2, 0] = True
+    path = _astar(blocked, (1, 1, 0), (2, 2, 0))
+    assert len(path) > 2  # not a single diagonal step through the gap between them
+
+
+def test_margin_voxels_is_exact_not_rounded_up():
+    from ddsg_nav.planner.local_planner import margin_voxels
+
+    assert margin_voxels(0.25, 0.1) == 2  # 2.5 voxels * 0.1 = exactly 0.25 m
+    assert margin_voxels(0.25, 0.2) == 1  # 1.5 voxels * 0.2 = 0.30 m, not 0.4 m
+    assert margin_voxels(0.0, 0.1) == 0
+    assert margin_voxels(0.05, 0.1) == 0  # the obstacle's own half voxel already covers it
+
+
 def test_local_start_inside_obstacle_raises():
     grid = _open_grid()
     grid.fill_box(Box((0.4, 0.4, 0.0), (0.6, 0.6, 1.0)), VoxelState.OCCUPIED)

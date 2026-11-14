@@ -23,6 +23,39 @@ def dist(a: Point, b: Point) -> float:
     return math.dist(a, b)
 
 
+Polygon = tuple[tuple[float, float], ...]
+
+
+def points_in_polygon(xs: np.ndarray, ys: np.ndarray, polygon: Polygon) -> np.ndarray:
+    """Vectorized even-odd (ray casting) point-in-polygon test for 2D points."""
+    inside = np.zeros(xs.shape, dtype=bool)
+    n = len(polygon)
+    for i in range(n):
+        x1, y1 = polygon[i]
+        x2, y2 = polygon[(i + 1) % n]
+        crosses = (y1 > ys) != (y2 > ys)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            x_at = (x2 - x1) * (ys - y1) / (y2 - y1) + x1
+        inside ^= crosses & (xs < x_at)
+    return inside
+
+
+def polygon_centroid(polygon: Polygon) -> tuple[float, float]:
+    """Area-weighted centroid (falls back to the vertex mean for degenerate polygons)."""
+    a = cx = cy = 0.0
+    n = len(polygon)
+    for i in range(n):
+        x1, y1 = polygon[i]
+        x2, y2 = polygon[(i + 1) % n]
+        cross = x1 * y2 - x2 * y1
+        a += cross
+        cx += (x1 + x2) * cross
+        cy += (y1 + y2) * cross
+    if abs(a) < 1e-12:
+        return (sum(p[0] for p in polygon) / n, sum(p[1] for p in polygon) / n)
+    return (cx / (3 * a), cy / (3 * a))
+
+
 @dataclass(frozen=True)
 class Box:
     """Axis-aligned box in meters, from `min` corner to `max` corner."""
@@ -44,13 +77,29 @@ class Box:
 
 @dataclass(frozen=True)
 class Room:
+    """A room (IFC space). `bounds` is its bounding box; `polygon` is the exact floor
+    footprint (x, y) when the room is not rectangular. `aliases` are extra names that
+    should resolve to this room (for example an IFC GlobalId or "401호")."""
+
     id: str
     name: str
     bounds: Box
+    aliases: tuple[str, ...] = ()
+    polygon: Polygon | None = None
 
     @property
     def center(self) -> Point:
+        if self.polygon:
+            cx, cy = polygon_centroid(self.polygon)
+            return (cx, cy, self.bounds.center[2])
         return self.bounds.center
+
+    def contains(self, p: Point) -> bool:
+        if not self.bounds.contains(p):
+            return False
+        if self.polygon is None:
+            return True
+        return bool(points_in_polygon(np.array([p[0]]), np.array([p[1]]), self.polygon)[0])
 
 
 @dataclass(frozen=True)
@@ -104,14 +153,18 @@ class VoxelGrid:
             return VoxelState.UNKNOWN
         return VoxelState(int(self.states[idx]))
 
-    def fill_box(self, box: Box, state: VoxelState) -> None:
-        """Set every voxel whose center lies in [box.min, box.max)."""
+    def box_slices(self, box: Box) -> tuple[slice, slice, slice]:
+        """Index slices of the voxels whose center lies in [box.min, box.max), clipped to the grid."""
         slices = []
         for lo, hi, o, n in zip(box.min, box.max, self.origin, self.shape):
             i0 = math.ceil((lo - o) / self.resolution - 0.5 - _EPS)
             i1 = math.ceil((hi - o) / self.resolution - 0.5 - _EPS)
-            slices.append(slice(max(i0, 0), min(i1, n)))
-        self.states[tuple(slices)] = int(state)
+            slices.append(slice(min(max(i0, 0), n), min(max(i1, 0), n)))
+        return tuple(slices)  # type: ignore[return-value]
+
+    def fill_box(self, box: Box, state: VoxelState) -> None:
+        """Set every voxel whose center lies in [box.min, box.max)."""
+        self.states[self.box_slices(box)] = int(state)
 
 
 @dataclass
@@ -137,19 +190,37 @@ class SceneGraph:
         self.voxels.fill_box(box, VoxelState.OCCUPIED)
 
     def find_room(self, ref: str) -> Room:
-        """Find a room by id or by name (case-insensitive)."""
+        """Find a room by id, name or alias (case-insensitive)."""
         if ref in self.rooms:
             return self.rooms[ref]
+        wanted = ref.lower()
         for room in self.rooms.values():
-            if room.name.lower() == ref.lower() or room.id.lower() == ref.lower():
+            if wanted in {room.id.lower(), room.name.lower(), *(a.lower() for a in room.aliases)}:
                 return room
         raise KeyError(f"unknown room {ref!r}")
 
     def room_at(self, p: Point) -> Room | None:
         for room in self.rooms.values():
-            if room.bounds.contains(p):
+            if room.contains(p):
                 return room
         return None
+
+    def room_mask(self, room: Room) -> np.ndarray:
+        """Boolean mask of the voxels inside the room (its polygon footprint, if any)."""
+        grid = self.voxels
+        mask = np.zeros(grid.shape, dtype=bool)
+        sx, sy, sz = grid.box_slices(room.bounds)
+        if sx.stop <= sx.start or sy.stop <= sy.start or sz.stop <= sz.start:
+            return mask
+        xs = grid.origin[0] + (np.arange(sx.start, sx.stop) + 0.5) * grid.resolution
+        ys = grid.origin[1] + (np.arange(sy.start, sy.stop) + 0.5) * grid.resolution
+        gx, gy = np.meshgrid(xs, ys, indexing="ij")
+        if room.polygon is not None:
+            inside = points_in_polygon(gx, gy, room.polygon)
+        else:
+            inside = np.ones(gx.shape, dtype=bool)
+        mask[sx, sy, sz] = inside[:, :, None]
+        return mask
 
     def room_graph(self) -> nx.Graph:
         """Room connectivity graph. Edge weight = path length through the door."""

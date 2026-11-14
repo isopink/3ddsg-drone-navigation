@@ -9,7 +9,8 @@ import numpy as np
 
 from ..graph.model import Point, Room, SceneGraph, VoxelGrid
 from .global_planner import RoomRoute, plan_rooms
-from .local_planner import NoPathError, blocked_mask, plan_voxel_path
+from .local_planner import NoPathError, plan_voxel_path
+from .policy import UnknownPolicy, blocked_mask
 
 
 @dataclass(frozen=True)
@@ -51,14 +52,15 @@ def plan_route(
     goal: str,
     height: float = 0.5,
     inflation_m: float = 0.25,
-    unknown_is_obstacle: bool = True,
+    unknown_is_obstacle: "bool | str | UnknownPolicy" = True,
 ) -> RoutePlan:
     """Plan from room `start` to room `goal` at `height`.
 
     Starts/ends at the room centers, or at the closest free point if a center is blocked.
+    `unknown_is_obstacle` is a bool or an UnknownPolicy (see planner/policy.py).
     """
     route: RoomRoute = plan_rooms(graph, start, goal)
-    blocked = blocked_mask(graph.voxels, inflation_m, unknown_is_obstacle)
+    blocked = blocked_mask(graph, inflation_m, unknown_is_obstacle)
 
     def at_height(p: Point) -> Point:
         return (p[0], p[1], height)

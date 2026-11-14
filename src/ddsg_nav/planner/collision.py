@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..graph.model import Point, SceneGraph, VoxelState
-from .local_planner import blocked_mask
+from ..graph.model import Point, SceneGraph
+from .policy import UnknownPolicy, blocked_mask, raw_obstacles
 
 
 @dataclass
@@ -44,13 +44,11 @@ def check_points(
     graph: SceneGraph,
     points: Iterable[Point],
     inflation_m: float = 0.25,
-    unknown_is_obstacle: bool = True,
+    unknown_is_obstacle: "bool | str | UnknownPolicy" = True,
 ) -> CollisionReport:
     grid = graph.voxels
-    raw = grid.states == int(VoxelState.OCCUPIED)
-    if unknown_is_obstacle:
-        raw = raw | (grid.states == int(VoxelState.UNKNOWN))
-    inflated = blocked_mask(grid, inflation_m, unknown_is_obstacle)
+    raw = raw_obstacles(graph, unknown_is_obstacle)
+    inflated = blocked_mask(graph, inflation_m, unknown_is_obstacle)
     report = CollisionReport()
     for p in points:
         report.samples += 1
@@ -79,7 +77,7 @@ def check_path(
     graph: SceneGraph,
     waypoints: Sequence[Point],
     inflation_m: float = 0.25,
-    unknown_is_obstacle: bool = True,
+    unknown_is_obstacle: "bool | str | UnknownPolicy" = True,
     step: float | None = None,
 ) -> CollisionReport:
     """Check the straight segments between waypoints (sampled every half voxel by default)."""

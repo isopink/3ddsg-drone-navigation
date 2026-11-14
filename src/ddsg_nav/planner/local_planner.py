@@ -34,17 +34,43 @@ def inflate(blocked: np.ndarray, radius_voxels: int) -> np.ndarray:
     return out
 
 
+def margin_voxels(inflation_m: float, resolution: float) -> int:
+    """Smallest inflation radius (in voxels) that keeps a free voxel center at least
+    `inflation_m` from an obstacle surface.
+
+    A free voxel center that is r voxels from an obstacle voxel center is (r + 0.5) *
+    resolution from its surface, so r >= inflation_m / resolution - 0.5. (Rounding
+    inflation_m / resolution up instead would give 0.35 m for a 0.25 m margin at 0.1 m
+    voxels and 0.4 m at 0.2 m, which closes 1 m wide doors on coarse grids.)
+    """
+    return max(0, math.ceil(inflation_m / resolution - 0.5 - 1e-9))
+
+
 def blocked_mask(
     grid: VoxelGrid, inflation_m: float = 0.25, unknown_is_obstacle: bool = True
 ) -> np.ndarray:
     blocked = grid.states == int(VoxelState.OCCUPIED)
     if unknown_is_obstacle:
         blocked |= grid.states == int(VoxelState.UNKNOWN)
-    return inflate(blocked, math.ceil(inflation_m / grid.resolution - 1e-9))
+    return inflate(blocked, margin_voxels(inflation_m, grid.resolution))
+
+
+def _intermediate_cells(d: tuple[int, int, int]) -> list[tuple[int, int, int]]:
+    """Cells a diagonal move squeezes past. They must be free too, otherwise the move
+    would cut the corner of an obstacle (keeping the safety margin only on paper)."""
+    axes = [i for i in range(3) if d[i] != 0]
+    out = []
+    for mask in range(1, (1 << len(axes)) - 1):
+        v = [0, 0, 0]
+        for bit, axis in enumerate(axes):
+            if mask >> bit & 1:
+                v[axis] = d[axis]
+        out.append((v[0], v[1], v[2]))
+    return out
 
 
 _NEIGHBORS = [
-    (dx, dy, dz, math.sqrt(dx * dx + dy * dy + dz * dz))
+    (dx, dy, dz, math.sqrt(dx * dx + dy * dy + dz * dz), _intermediate_cells((dx, dy, dz)))
     for dx, dy, dz in itertools.product((-1, 0, 1), repeat=3)
     if (dx, dy, dz) != (0, 0, 0)
 ]
@@ -68,9 +94,11 @@ def _astar(blocked: np.ndarray, start: tuple, goal: tuple) -> list[tuple]:
                 path.append(cur)
             return path[::-1]
         closed.add(cur)
-        for dx, dy, dz, cost in _NEIGHBORS:
+        for dx, dy, dz, cost, via in _NEIGHBORS:
             nxt = (cur[0] + dx, cur[1] + dy, cur[2] + dz)
             if not all(0 <= i < n for i, n in zip(nxt, shape)) or blocked[nxt] or nxt in closed:
+                continue
+            if via and any(blocked[cur[0] + a, cur[1] + b, cur[2] + c] for a, b, c in via):
                 continue
             ng = g_score[cur] + cost
             if ng < g_score.get(nxt, math.inf):

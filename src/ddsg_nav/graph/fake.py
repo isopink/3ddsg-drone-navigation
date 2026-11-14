@@ -60,3 +60,62 @@ def build_fake_graph(resolution: float = 0.1, obstacle: bool = False) -> SceneGr
         graph.add_solid(Box((cx - 0.2, cy - 0.2, 0.0), (cx + 0.2, cy + 0.2, 1.0)))
 
     return graph
+
+
+def build_large_graph(
+    rooms_x: int = 6,
+    rooms_y: int = 4,
+    room_size: float = 5.0,
+    resolution: float = 0.1,
+    height: float = HEIGHT,
+) -> SceneGraph:
+    """A rooms_x by rooms_y block of square rooms, a door in every shared wall.
+
+    Default is 30 m x 20 m (1.5 million voxels at 0.1 m): a rough size for one real floor,
+    used to check planning speed. Room ids are "R<ix>_<iy>".
+    """
+    width, depth = rooms_x * room_size, rooms_y * room_size
+    grid = VoxelGrid.empty(
+        origin=(-WALL, -WALL, 0.0),
+        size=(width + 2 * WALL, depth + 2 * WALL, height),
+        resolution=resolution,
+        state=VoxelState.FREE,
+    )
+    graph = SceneGraph(voxels=grid)
+    rid = lambda ix, iy: f"R{ix}_{iy}"  # noqa: E731
+
+    for ix in range(rooms_x):
+        for iy in range(rooms_y):
+            x0, y0 = ix * room_size, iy * room_size
+            graph.add_room(
+                Room(rid(ix, iy), f"Room {ix}-{iy}",
+                     Box((x0, y0, 0.0), (x0 + room_size, y0 + room_size, height)))
+            )
+
+    graph.add_solid(Box((-WALL, -WALL, 0.0), (width + WALL, 0.0, height)))
+    graph.add_solid(Box((-WALL, depth, 0.0), (width + WALL, depth + WALL, height)))
+    graph.add_solid(Box((-WALL, 0.0, 0.0), (0.0, depth, height)))
+    graph.add_solid(Box((width, 0.0, 0.0), (width + WALL, depth, height)))
+
+    half, t = DOOR_WIDTH / 2, PARTITION / 2
+    for ix in range(1, rooms_x):  # walls between neighbours in x
+        x = ix * room_size
+        for iy in range(rooms_y):
+            y0, y1 = iy * room_size, (iy + 1) * room_size
+            yc = (y0 + y1) / 2
+            graph.add_solid(Box((x - t, y0, 0.0), (x + t, yc - half, height)))
+            graph.add_solid(Box((x - t, yc + half, 0.0), (x + t, y1, height)))
+            graph.add_solid(Box((x - t, yc - half, DOOR_HEIGHT), (x + t, yc + half, height)))
+            a, b = rid(ix - 1, iy), rid(ix, iy)
+            graph.add_door(Door(f"door_{a}__{b}", a, b, (x, yc, DOOR_HEIGHT / 2), DOOR_WIDTH))
+    for iy in range(1, rooms_y):  # walls between neighbours in y
+        y = iy * room_size
+        for ix in range(rooms_x):
+            x0, x1 = ix * room_size, (ix + 1) * room_size
+            xc = (x0 + x1) / 2
+            graph.add_solid(Box((x0, y - t, 0.0), (xc - half, y + t, height)))
+            graph.add_solid(Box((xc + half, y - t, 0.0), (x1, y + t, height)))
+            graph.add_solid(Box((xc - half, y - t, DOOR_HEIGHT), (xc + half, y + t, height)))
+            a, b = rid(ix, iy - 1), rid(ix, iy)
+            graph.add_door(Door(f"door_{a}__{b}", a, b, (xc, y, DOOR_HEIGHT / 2), DOOR_WIDTH))
+    return graph
