@@ -11,7 +11,7 @@ This repo covers the part that **takes the graph and flies the drone**. Graph co
 |---|---|---|
 | 0 | Setup, Crazyflie connection, hover / forward flight | Done |
 | 1 | Goal parsing + route planning on a fake graph | Done (tested in simulation) |
-| 2 | Collision check with Open3D visualization | Planned |
+| 2 | Collision check with Open3D visualization | Done |
 | 3 | Real-drone test (virtual walls) | Planned (backend written, not flight-tested) |
 | 4 | Connect the real graph (Neo4j) | Planned |
 | 5 | Re-planning for dynamic objects | Planned |
@@ -34,12 +34,13 @@ pytest
 src/ddsg_nav/
   graph/      model.py, fake.py (3 rooms, 2 doors), neo4j_source.py (Step 4)
   goal.py     "room A -> room C" goal parsing
-  planner/    global_planner.py (room graph), local_planner.py (voxel A*), route.py
+  planner/    global_planner.py (room graph), local_planner.py (voxel A*), route.py,
+              collision.py (path / trajectory checks)
   sim/        scene.py (graph -> MuJoCo scene), quadrotor.py (controller)
   flight/     backend.py (interface), executor.py, safety.py
     backends/ crazyflie.py (real drone), mujoco_backend.py (simulation)
-  viz/        Open3D visualization (Step 2)
-scripts/      Step 0 flight tests, demo_sim.py
+  viz/        o3d_viz.py (Open3D: voxels, doors, route, flown trajectory)
+scripts/      Step 0 flight tests, demo_sim.py, viz_routes.py
 tests/        unit tests (run without a drone)
 data/         lab graphs, never committed
 docs/media/   photos and videos
@@ -61,6 +62,25 @@ cf-env\Scripts\python scripts\demo_sim.py "A방에서 C방으로" --obstacle
 ```
 
 The simulated quadrotor uses a simple geometric controller and no sensor model, so it checks paths and control logic but does **not** reproduce Flow deck behavior (optical flow drift, divergence in the dark).
+
+## Route visualization and collision check
+
+`scripts/viz_routes.py` plans every ordered room pair (6) at three flight heights (0.3, 0.5, 1.0 m), with and without an obstacle, and checks each path against the voxel map plus a 25 cm safety margin. Result: **0 hard collisions, 0 margin violations, 0 points outside the map in all 36 plans.**
+
+```
+cf-env\Scripts\python scripts\viz_routes.py                  # collision table
+cf-env\Scripts\python scripts\viz_routes.py --screenshots --sim   # also save PNGs with a simulated flight
+cf-env\Scripts\python scripts\viz_routes.py --show "go from A to C" --obstacle   # interactive window
+```
+
+<p align="center">
+  <img src="docs/media/route_A_to_C_obstacle_top.png" alt="Route A to C around an obstacle, top view" width="49%">
+  <img src="docs/media/route_A_to_C_obstacle_oblique.png" alt="Same route, cutaway view" width="49%">
+  <br>
+  <sub>Gray: walls and the box in room B · green: doors · red: planned route · blue: simulated flight</sub>
+</p>
+
+If a room's center is blocked (for example by the box in room B), the route starts or ends at the closest free point in that room instead.
 
 ## Scripts
 
