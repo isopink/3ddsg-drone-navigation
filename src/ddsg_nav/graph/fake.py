@@ -9,6 +9,8 @@ Layout (meters, top view, x to the right):
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from .model import Box, Door, Room, SceneGraph, VoxelGrid, VoxelState
 
 ROOM_SIZE = 3.0
@@ -59,6 +61,57 @@ def build_fake_graph(resolution: float = 0.1, obstacle: bool = False) -> SceneGr
         cx, cy = 1.5 * ROOM_SIZE, ROOM_SIZE / 2
         graph.add_solid(Box((cx - 0.2, cy - 0.2, 0.0), (cx + 0.2, cy + 0.2, 1.0)))
 
+    return graph
+
+
+def build_row_graph(
+    room_sizes: Sequence[float] = (1.5, 1.5, 1.5),
+    depth: float = 1.5,
+    door_width: float = 0.8,
+    height: float = HEIGHT,
+    resolution: float = 0.1,
+) -> SceneGraph:
+    """Virtual rooms in a row, sized to the space you can really fly in.
+
+    `room_sizes` are the widths (x) of the rooms, `depth` their size in y. Rooms are named
+    A, B, C ... and every shared wall has a door of `door_width`. The walls only exist in
+    the map, nothing is built: the drone flies in an empty space and the planner keeps it
+    inside the virtual rooms and routes it through the virtual doors.
+
+    The usable door width is `door_width` minus twice the safety margin (0.25 m), so
+    keep doors at least 0.8 m wide, and leave room for the Flow deck's position drift.
+    """
+    if not room_sizes or len(room_sizes) > 26:
+        raise ValueError("need 1 to 26 rooms")
+    width = sum(room_sizes)
+    grid = VoxelGrid.empty(
+        origin=(-WALL, -WALL, 0.0),
+        size=(width + 2 * WALL, depth + 2 * WALL, height),
+        resolution=resolution,
+        state=VoxelState.FREE,
+    )
+    graph = SceneGraph(voxels=grid)
+    ids = [chr(ord("A") + i) for i in range(len(room_sizes))]
+
+    x0 = 0.0
+    edges = []
+    for rid, w in zip(ids, room_sizes):
+        graph.add_room(Room(rid, f"Room {rid}", Box((x0, 0.0, 0.0), (x0 + w, depth, height))))
+        x0 += w
+        edges.append(x0)
+
+    graph.add_solid(Box((-WALL, -WALL, 0.0), (width + WALL, 0.0, height)))
+    graph.add_solid(Box((-WALL, depth, 0.0), (width + WALL, depth + WALL, height)))
+    graph.add_solid(Box((-WALL, 0.0, 0.0), (0.0, depth, height)))
+    graph.add_solid(Box((width, 0.0, 0.0), (width + WALL, depth, height)))
+
+    yc, half, t = depth / 2, door_width / 2, PARTITION / 2
+    for i, x in enumerate(edges[:-1]):
+        graph.add_solid(Box((x - t, 0.0, 0.0), (x + t, yc - half, height)))
+        graph.add_solid(Box((x - t, yc + half, 0.0), (x + t, depth, height)))
+        graph.add_solid(Box((x - t, yc - half, DOOR_HEIGHT), (x + t, yc + half, height)))
+        a, b = ids[i], ids[i + 1]
+        graph.add_door(Door(f"door_{a}{b}", a, b, (x, yc, DOOR_HEIGHT / 2), door_width))
     return graph
 
 

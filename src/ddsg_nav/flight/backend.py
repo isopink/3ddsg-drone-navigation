@@ -6,8 +6,18 @@ Coordinates are graph coordinates in meters (x, y, z up).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 
 from ..graph.model import Point
+
+
+@dataclass(frozen=True)
+class Status:
+    """What a backend can tell about the drone right now. Unknown values stay None / empty."""
+
+    battery_v: float | None = None
+    flags: dict[str, bool] = field(default_factory=dict)  # e.g. isLocked, isCrashed, isTumbled
+    position: Point | None = None
 
 
 class DroneBackend(ABC):
@@ -22,6 +32,10 @@ class DroneBackend(ABC):
     @abstractmethod
     def position(self) -> Point:
         """Best available position estimate."""
+
+    def status(self) -> Status:
+        """Battery, drone state and position for the flight monitor. Optional to override."""
+        return Status()
 
     @abstractmethod
     def land(self) -> None:

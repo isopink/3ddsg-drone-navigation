@@ -22,7 +22,7 @@ from cflib.positioning.position_hl_commander import PositionHlCommander
 from ...graph.model import Point
 from ...graph.transform import Transform
 from .. import safety
-from ..backend import DroneBackend
+from ..backend import DroneBackend, Status
 
 DEFAULT_URI = "radio://0/80/2M"
 
@@ -42,6 +42,9 @@ class CrazyflieBackend(DroneBackend):
         self._scf: SyncCrazyflie | None = None
         self._pc: PositionHlCommander | None = None
         self._flying = False
+        self._traj_log: LogConfig | None = None
+        self._t0 = 0.0
+        self.trajectory: list[tuple[float, float, float, float]] = []  # (t, x, y, z), graph frame
 
     # -- connection ---------------------------------------------------------
     def connect(self) -> None:
@@ -96,6 +99,52 @@ class CrazyflieBackend(DroneBackend):
         ]
         safety.check_ground_height(heights)
 
+    def _start_trajectory_log(self) -> None:
+        """Record the position estimate during the flight (async, 20 Hz)."""
+        assert self._scf is not None
+        self.trajectory = []
+        self._t0 = time.monotonic()
+        lg = LogConfig(name="traj", period_in_ms=50)
+        for v in ("stateEstimate.x", "stateEstimate.y", "stateEstimate.z"):
+            lg.add_variable(v, "float")
+
+        def on_data(_ts, data, _cfg):
+            x, y, z = self.frame.to_graph(
+                (data["stateEstimate.x"], data["stateEstimate.y"], data["stateEstimate.z"])
+            )
+            self.trajectory.append((time.monotonic() - self._t0, x, y, z))
+
+        lg.data_received_cb.add_callback(on_data)
+        self._scf.cf.log.add_config(lg)
+        lg.start()
+        self._traj_log = lg
+
+    def _stop_trajectory_log(self) -> None:
+        # the Crazyflie keeps log blocks until they are deleted; leftovers make the next
+        # connection print 'Error no LogEntry to handle id=N' (seen in the Step 0 flights)
+        lg, self._traj_log = self._traj_log, None
+        if lg is not None:
+            try:
+                lg.stop()
+                lg.delete()
+            except Exception as e:  # never let cleanup break the landing
+                print(f"log cleanup warning: {e}")
+
+    def status(self) -> Status:
+        self.connect()
+        s = self._read_log(
+            [
+                ("pm.vbat", "float"),
+                ("supervisor.info", "uint16_t"),
+                ("stateEstimate.x", "float"),
+                ("stateEstimate.y", "float"),
+                ("stateEstimate.z", "float"),
+            ]
+        )[0]
+        flags = safety.decode_supervisor(int(s["supervisor.info"]))
+        pos = self.frame.to_graph((s["stateEstimate.x"], s["stateEstimate.y"], s["stateEstimate.z"]))
+        return Status(battery_v=float(s["pm.vbat"]), flags=flags, position=pos)
+
     # -- DroneBackend -------------------------------------------------------
     def takeoff(self, height: float) -> None:
         self.connect()
@@ -104,6 +153,7 @@ class CrazyflieBackend(DroneBackend):
         self._scf.cf.supervisor.send_arming_request(True)
         time.sleep(1.0)
         self._pc = PositionHlCommander(self._scf, x=0.0, y=0.0, z=0.0, default_velocity=0.2)
+        self._start_trajectory_log()
         try:
             self._flying = True
             self._pc.take_off(height=self.frame.to_drone((0.0, 0.0, height))[2], velocity=0.2)
@@ -127,6 +177,9 @@ class CrazyflieBackend(DroneBackend):
         )
 
     def land(self) -> None:
-        if self._pc is not None and self._flying:
-            self._flying = False
-            self._pc.land(velocity=0.2)
+        try:
+            if self._pc is not None and self._flying:
+                self._flying = False
+                self._pc.land(velocity=0.2)
+        finally:
+            self._stop_trajectory_log()

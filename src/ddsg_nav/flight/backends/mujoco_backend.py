@@ -10,7 +10,7 @@ import numpy as np
 from ...graph.model import Point, SceneGraph
 from ...sim.quadrotor import GeometricController, QuadrotorParams
 from ...sim.scene import DRONE_BODY, DRONE_GEOM, FLOOR_GEOM, build_mjcf
-from ..backend import DroneBackend
+from ..backend import DroneBackend, Status
 
 ARRIVE_POS_TOL = 0.06  # m
 ARRIVE_VEL_TOL = 0.12  # m/s
@@ -142,6 +142,9 @@ class MuJoCoBackend(DroneBackend):
         if not self._flying:
             raise RuntimeError("not flying: call takeoff() first")
         self._fly_to(np.array([x, y, z], dtype=float), velocity)
+
+    def status(self) -> Status:
+        return Status(battery_v=4.1, position=self.position())  # no battery model
 
     def land(self) -> None:
         if not self._flying:
