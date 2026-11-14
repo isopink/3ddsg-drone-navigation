@@ -73,9 +73,9 @@ def parse_goal(text: str, graph: SceneGraph, current_room: str | None = None) ->
     if start is None or goal is None:
         for m in mentions:
             rest = text[m.end :]
-            if re.match(r"\s*방?\s*(에서|부터)", rest):
+            if re.match(r"\s*(?:호실|호|실|방)?\s*(에서|부터)", rest):
                 start = start or m.room_id
-            elif re.match(r"\s*방?\s*(으로|로|까지)", rest):
+            elif re.match(r"\s*(?:호실|호|실|방)?\s*(으로|로|까지)", rest):
                 goal = goal or m.room_id
 
     # arrows
