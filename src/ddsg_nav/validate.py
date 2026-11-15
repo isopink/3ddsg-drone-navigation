@@ -69,7 +69,8 @@ def validate_graph(
     policy: "bool | str | UnknownPolicy" = UnknownPolicy.OBSTACLE,
     check_connectivity: bool = True,
 ) -> ValidationReport:
-    """Check structure, geometry and flyability at `flight_height`."""
+    """Check structure, geometry and flyability at `flight_height` above each floor
+    (a room's floor, or at a door the higher floor of its two rooms)."""
     rep = ValidationReport()
     grid = graph.voxels
     states = grid.states
@@ -112,25 +113,31 @@ def validate_graph(
     # room-level flyability at the flight height
     k_free: dict[str, bool] = {}
     for room in graph.rooms.values():
-        mask = graph.room_mask(room)
-        k = grid.index((0.0, 0.0, flight_height))[2]
+        k = grid.index((0.0, 0.0, graph.floor_z(room) + flight_height))[2]
         if not 0 <= k < grid.shape[2]:
-            rep.add("error", "height-outside-grid", f"flight height {flight_height} m is outside the grid")
+            rep.add(
+                "error",
+                "height-outside-grid",
+                f"flight height {flight_height} m above the floor of room {room.id} is outside the grid",
+            )
             return rep
-        layer = mask[:, :, k] & ~blocked[:, :, k]
-        k_free[room.id] = bool(layer.any())
-        if not layer.any():
+        # same rule as the planner: the flight height, or the lowest higher layer with space
+        try:
+            nearest_free_point(grid, blocked, room, graph.floor_z(room) + flight_height)
+            k_free[room.id] = True
+        except NoPathError:
+            k_free[room.id] = False
             rep.add(
                 "error",
                 "room-not-flyable",
-                f"room {room.id} has no flyable space at {flight_height} m "
+                f"room {room.id} has no flyable space at or above {flight_height} m "
                 f"(after a {inflation_m} m safety margin)",
             )
 
     # doors
     for door in graph.doors.values():
         x, y, _ = door.position
-        idx = grid.index((x, y, flight_height))
+        idx = grid.index((x, y, graph.door_floor_z(door) + flight_height))
         if not grid.in_bounds(idx):
             rep.add("error", "door-outside-grid", f"door {door.id} is outside the voxel grid")
             continue
@@ -171,12 +178,13 @@ def validate_graph(
     if check_connectivity and rep.ok:
         for door in graph.doors.values():
             x, y, _ = door.position
-            target = (x, y, flight_height)
+            target = (x, y, graph.door_floor_z(door) + flight_height)
             for rid in (door.room_a, door.room_b):
                 if not k_free.get(rid):
                     continue
                 try:
-                    start = nearest_free_point(grid, blocked, graph.rooms[rid], flight_height)
+                    room = graph.rooms[rid]
+                    start = nearest_free_point(grid, blocked, room, graph.floor_z(room) + flight_height)
                     plan_voxel_path(grid, start, target, blocked=blocked)
                 except NoPathError as e:
                     rep.add("error", "door-unreachable", f"cannot fly from room {rid} to door {door.id}: {e}")

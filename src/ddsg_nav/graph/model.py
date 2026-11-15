@@ -222,6 +222,16 @@ class SceneGraph:
         mask[sx, sy, sz] = inside[:, :, None]
         return mask
 
+    def floor_z(self, room: Room | str) -> float:
+        """Floor level of a room (the bottom of its bounds)."""
+        r = self.rooms[room] if isinstance(room, str) else room
+        return r.bounds.min[2]
+
+    def door_floor_z(self, door: Door) -> float:
+        """Floor level at a door: the higher floor of its two rooms. A stairwell spans
+        both floors, so its door to an upper room sits on that room's floor."""
+        return max(self.floor_z(door.room_a), self.floor_z(door.room_b))
+
     def room_graph(self) -> nx.Graph:
         """Room connectivity graph. Edge weight = path length through the door."""
         g = nx.Graph()

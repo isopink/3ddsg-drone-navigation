@@ -38,6 +38,8 @@ class MuJoCoBackend(DroneBackend):
         except ImportError as e:  # pragma: no cover
             raise ImportError("MuJoCo backend needs: pip install -e '.[sim]'") from e
         self._mj = mujoco
+        self._graph = graph
+        self._landing = False
         self.params = params or QuadrotorParams()
         # start slightly above the floor so the sphere does not begin in contact
         floor_start = (start[0], start[1], max(start[2], self.params.radius + 0.01))
@@ -86,9 +88,26 @@ class MuJoCoBackend(DroneBackend):
             pair = (c.geom1, c.geom2)
             if self._geom in pair:
                 other = pair[1] if pair[0] == self._geom else pair[0]
-                if other != self._floor:
-                    self.collisions += 1
-                    return
+                if other == self._floor:
+                    continue
+                # while landing, resting on a surface below (an upper floor) is not a collision
+                below = c.pos[2] < d.xpos[self._body][2] - 0.5 * self.params.radius
+                if self._landing and below:
+                    continue
+                self.collisions += 1
+                return
+
+    def _surface_below(self, x: float, y: float, z: float) -> float:
+        """Top of the highest occupied voxel under (x, y) and below z: the floor to land on."""
+        grid = self._graph.voxels
+        i, j, k = grid.index((x, y, z))
+        if not (0 <= i < grid.shape[0] and 0 <= j < grid.shape[1]):
+            return 0.0
+        column = grid.states[i, j, : max(0, min(k, grid.shape[2]))]
+        hits = np.flatnonzero(column == 2)  # VoxelState.OCCUPIED
+        if len(hits) == 0:
+            return 0.0
+        return float(grid.origin[2] + (hits[-1] + 1) * grid.resolution)
 
     # -- simulation ---------------------------------------------------------
     def _step(self) -> None:
@@ -168,9 +187,10 @@ class MuJoCoBackend(DroneBackend):
     def land(self) -> None:
         if not self._flying:
             return
-        x, y, _ = self.position()
+        x, y, z = self.position()
+        self._landing = True
         try:
-            self._fly_to(np.array([x, y, LAND_Z]), velocity=0.2)
+            self._fly_to(np.array([x, y, self._surface_below(x, y, z) + LAND_Z]), velocity=0.2)
         finally:
             self._flying = False
             for _ in range(int(0.3 / self._dt)):  # let it settle with motors off
