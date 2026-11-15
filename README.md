@@ -1,4 +1,4 @@
-# 3DDSG Drone Navigation
+# Overview
 
 <p align="center">
   <img src="docs/media/night_flight.gif" alt="The drone flying in the dark" width="240">
