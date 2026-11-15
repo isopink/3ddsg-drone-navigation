@@ -5,9 +5,12 @@ Sequence: take off -> hover -> move forward 1 m -> hover -> land.
 Run (drone on flat floor, >=2 m clear in front, Crazyradio plugged in):
     cf-env\\Scripts\\python step0_hover_test.py [--uri radio://0/80/2M/E7E7E7E7E7]
 
+Add --live to print motor output and sensor values while it flies.
+
 Safety: keep a hand near the drone / battery. Ctrl+C lands immediately.
 """
 import argparse
+import threading
 import time
 from threading import Event
 
@@ -75,7 +78,29 @@ FLIGHT_LOG_VARS = [("range.zrange", "uint16_t"), ("stateEstimate.z", "float"),
 
 
 XY_LOG_VARS = [("stateEstimate.x", "float"), ("stateEstimate.y", "float"),
-               ("stabilizer.yaw", "float")]
+               ("stabilizer.yaw", "float"), ("pm.vbat", "float")]
+
+
+def live_printer(samples: list, xy: list, stop: Event, period_s: float = 0.25) -> threading.Thread:
+    """Print the latest motor output and sensor values while flying (--live)."""
+    t0 = time.monotonic()
+
+    def run():
+        print("   t s | height mm | est z m | motors % m1  m2  m3  m4 |   x m    y m | battery V")
+        while not stop.wait(period_s):
+            if not samples:
+                continue
+            s, p = samples[-1], (xy[-1] if xy else {})
+            m = [s.get(f"motor.m{i}", 0) * 100 / 65535 for i in (1, 2, 3, 4)]
+            warn = "  <- motors near max" if max(m) > 90 else ""
+            print(f"{time.monotonic() - t0:6.1f} | {s.get('range.zrange', 0):9d} | {s.get('stateEstimate.z', 0):7.2f} |"
+                  f"          {m[0]:3.0f} {m[1]:3.0f} {m[2]:3.0f} {m[3]:3.0f} |"
+                  f" {p.get('stateEstimate.x', 0):6.2f} {p.get('stateEstimate.y', 0):6.2f} |"
+                  f" {p.get('pm.vbat', 0):9.2f}{warn}", flush=True)
+
+    th = threading.Thread(target=run, daemon=True)
+    th.start()
+    return th
 
 
 def _start_log(scf: SyncCrazyflie, name: str, variables: list, samples: list, configs: list) -> None:
@@ -175,7 +200,7 @@ def check_height_sensor(scf: SyncCrazyflie, n: int = 10) -> None:
         raise SystemExit(f"Height sensor value frozen at {vals[0]} mm. Not taking off.")
 
 
-def main(uri: str, height: float, distance: float, hover_time: float) -> None:
+def main(uri: str, height: float, distance: float, hover_time: float, live: bool = False) -> None:
     if height < MIN_RECOMMENDED_HEIGHT:
         print(f"WARNING: {height} m is below the documented Flow deck v2 range "
               f"({MIN_RECOMMENDED_HEIGHT}-3.0 m). Height hold may be unreliable.")
@@ -207,6 +232,9 @@ def main(uri: str, height: float, distance: float, hover_time: float) -> None:
             raise SystemExit(f"Drone did not arm {sup}. Not taking off.")
 
         samples, xy, log_configs = start_flight_log(scf)
+        live_stop = Event()
+        if live:
+            live_printer(samples, xy, live_stop)
 
         print("Take off...")
         with MotionCommander(scf, default_height=height) as mc:
@@ -218,6 +246,7 @@ def main(uri: str, height: float, distance: float, hover_time: float) -> None:
                 time.sleep(2)
             print("Landing...")
         time.sleep(0.5)
+        live_stop.set()
         stop_flight_log(log_configs)
         summarize_flight_log(samples)
         summarize_xy(xy)
@@ -231,5 +260,7 @@ if __name__ == "__main__":
     ap.add_argument("--distance", type=float, default=MOVE_DISTANCE,
                     help="forward distance in m (0 = hover only)")
     ap.add_argument("--hover-time", type=float, default=3.0, help="seconds to hover")
+    ap.add_argument("--live", action="store_true",
+                    help="print motor output (%% of max), height, position and battery 4x per second")
     a = ap.parse_args()
-    main(a.uri, a.height, a.distance, a.hover_time)
+    main(a.uri, a.height, a.distance, a.hover_time, a.live)
