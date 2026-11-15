@@ -1,7 +1,9 @@
 """Scene graph -> MuJoCo scene (MJCF). Walls, doors and obstacles come from `graph.solids`."""
 from __future__ import annotations
 
-from ..graph.model import Point, SceneGraph
+from collections.abc import Sequence
+
+from ..graph.model import Box, Point, SceneGraph
 from .quadrotor import QuadrotorParams
 
 DRONE_BODY = "drone"
@@ -14,8 +16,12 @@ def build_mjcf(
     start: Point,
     params: QuadrotorParams | None = None,
     timestep: float = 0.002,
+    extra_solids: Sequence[Box] = (),
 ) -> str:
-    """Return MJCF XML with the graph's solids and one free-flying drone at `start`."""
+    """Return MJCF XML with the graph's solids and one free-flying drone at `start`.
+
+    `extra_solids` are boxes the graph does not contain (unmapped obstacles).
+    """
     p = params or QuadrotorParams()
     solids = []
     for i, box in enumerate(graph.solids):
@@ -24,6 +30,13 @@ def build_mjcf(
         solids.append(
             f'    <geom name="solid_{i}" type="box" pos="{cx:.4f} {cy:.4f} {cz:.4f}" '
             f'size="{hx:.4f} {hy:.4f} {hz:.4f}" rgba="0.62 0.62 0.68 0.55"/>'
+        )
+    for i, box in enumerate(extra_solids):
+        cx, cy, cz = box.center
+        hx, hy, hz = (s / 2 for s in box.size)
+        solids.append(
+            f'    <geom name="extra_{i}" type="box" pos="{cx:.4f} {cy:.4f} {cz:.4f}" '
+            f'size="{hx:.4f} {hy:.4f} {hz:.4f}" rgba="0.85 0.45 0.2 0.8"/>'
         )
     ixx, iyy, izz = p.inertia
     sx, sy, sz = start

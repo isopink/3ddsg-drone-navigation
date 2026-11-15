@@ -1,7 +1,8 @@
 """Collision checks: path points vs the voxel map and its inflated safety margin.
 
 Three kinds of violations:
-- `hard`: a point inside an occupied voxel (or an unknown one, if unknown_is_obstacle)
+- `hard`: a point inside an occupied voxel, or an unknown one that the policy blocks
+  (`unknown_is_obstacle` is a bool, an UnknownPolicy or an ElementPolicy)
 - `margin`: a point closer to an obstacle than the safety margin
 - `outside`: a point outside the voxel grid
 """
@@ -14,7 +15,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..graph.model import Point, SceneGraph
-from .policy import UnknownPolicy, blocked_mask, raw_obstacles
+from .policy import PolicyLike, blocked_mask, raw_obstacles
 
 
 @dataclass
@@ -44,7 +45,7 @@ def check_points(
     graph: SceneGraph,
     points: Iterable[Point],
     inflation_m: float = 0.25,
-    unknown_is_obstacle: "bool | str | UnknownPolicy" = True,
+    unknown_is_obstacle: PolicyLike = True,
 ) -> CollisionReport:
     grid = graph.voxels
     raw = raw_obstacles(graph, unknown_is_obstacle)
@@ -77,7 +78,7 @@ def check_path(
     graph: SceneGraph,
     waypoints: Sequence[Point],
     inflation_m: float = 0.25,
-    unknown_is_obstacle: "bool | str | UnknownPolicy" = True,
+    unknown_is_obstacle: PolicyLike = True,
     step: float | None = None,
 ) -> CollisionReport:
     """Check the straight segments between waypoints (sampled every half voxel by default)."""
