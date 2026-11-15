@@ -1,4 +1,4 @@
-"""Local planner: A* on the voxel grid with obstacle inflation. Axis-aligned moves only.
+"""Local planner: A* on the voxel grid with obstacle inflation.
 
 Unobserved (UNKNOWN) voxels are treated as obstacles by default.
 """
@@ -92,71 +92,84 @@ def blocked_mask(
     return inflate_by_distance(blocked, inflation_m, grid.resolution)
 
 
-_MOVES = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
-TURN_COST = 0.5  # in voxels: prefer long straight runs over staircase zigzags
+def _intermediate_cells(d: tuple[int, int, int]) -> list[tuple[int, int, int]]:
+    """Cells a diagonal move squeezes past. They must be free too, otherwise the move
+    would cut the corner of an obstacle (keeping the safety margin only on paper)."""
+    axes = [i for i in range(3) if d[i] != 0]
+    out = []
+    for mask in range(1, (1 << len(axes)) - 1):
+        v = [0, 0, 0]
+        for bit, axis in enumerate(axes):
+            if mask >> bit & 1:
+                v[axis] = d[axis]
+        out.append((v[0], v[1], v[2]))
+    return out
+
+
+_NEIGHBORS = [
+    (dx, dy, dz, math.sqrt(dx * dx + dy * dy + dz * dz), _intermediate_cells((dx, dy, dz)))
+    for dx, dy, dz in itertools.product((-1, 0, 1), repeat=3)
+    if (dx, dy, dz) != (0, 0, 0)
+]
 
 
 def _astar(blocked: np.ndarray, start: tuple, goal: tuple) -> list[tuple]:
-    """A* over the 6 axis moves (no diagonals), with a small cost per change of direction."""
     shape = blocked.shape
     counter = itertools.count()
-    first = (start, -1)
-    open_heap = [(0.0, next(counter), first)]
-    g_score = {first: 0.0}
+    open_heap = [(0.0, next(counter), start)]
+    g_score = {start: 0.0}
     parent: dict[tuple, tuple] = {}
     closed: set[tuple] = set()
     while open_heap:
-        _, _, state = heapq.heappop(open_heap)
-        if state in closed:
+        _, _, cur = heapq.heappop(open_heap)
+        if cur in closed:
             continue
-        cur, d = state
         if cur == goal:
             path = [cur]
-            while state in parent:
-                state = parent[state]
-                path.append(state[0])
+            while cur in parent:
+                cur = parent[cur]
+                path.append(cur)
             return path[::-1]
-        closed.add(state)
-        for k, (dx, dy, dz) in enumerate(_MOVES):
+        closed.add(cur)
+        for dx, dy, dz, cost, via in _NEIGHBORS:
             nxt = (cur[0] + dx, cur[1] + dy, cur[2] + dz)
-            if not all(0 <= i < n for i, n in zip(nxt, shape)) or blocked[nxt]:
+            if not all(0 <= i < n for i, n in zip(nxt, shape)) or blocked[nxt] or nxt in closed:
                 continue
-            ns = (nxt, k)
-            if ns in closed:
+            if via and any(blocked[cur[0] + a, cur[1] + b, cur[2] + c] for a, b, c in via):
                 continue
-            ng = g_score[state] + 1.0 + (TURN_COST if d not in (-1, k) else 0.0)
-            if ng < g_score.get(ns, math.inf):
-                g_score[ns] = ng
-                parent[ns] = state
-                h = abs(nxt[0] - goal[0]) + abs(nxt[1] - goal[1]) + abs(nxt[2] - goal[2])
-                heapq.heappush(open_heap, (ng + h, next(counter), ns))
+            ng = g_score[cur] + cost
+            if ng < g_score.get(nxt, math.inf):
+                g_score[nxt] = ng
+                parent[nxt] = cur
+                h = math.dist(nxt, goal)
+                heapq.heappush(open_heap, (ng + h, next(counter), nxt))
     raise NoPathError("no collision-free path")
 
 
-def _corners(grid: VoxelGrid, cells: list[tuple], start: Point, goal: Point) -> list[Point]:
-    """Waypoints at the corners of an axis-aligned cell path, every segment along one axis.
+def _segment_free(grid: VoxelGrid, blocked: np.ndarray, a: Point, b: Point) -> bool:
+    """True if the straight segment a-b only passes through free voxels. Sampled every
+    1/8 voxel (vectorized), so it cannot skip the corner of a blocked voxel by more than
+    that."""
+    n = max(1, math.ceil(math.dist(a, b) / (grid.resolution / 8)))
+    t = np.linspace(0.0, 1.0, n + 1)[:, None]
+    pts = np.asarray(a, dtype=float) + (np.asarray(b, dtype=float) - np.asarray(a, dtype=float)) * t
+    idx = np.floor((pts - np.asarray(grid.origin)) / grid.resolution + 1e-9).astype(int)
+    shape = np.asarray(blocked.shape)
+    if (idx < 0).any() or (idx >= shape).any():
+        return False
+    return not blocked[idx[:, 0], idx[:, 1], idx[:, 2]].any()
 
-    The path starts and ends at the exact `start` and `goal`. Their offsets from the voxel
-    centers (under half a voxel) are absorbed on the axes where they apply, so no segment
-    becomes diagonal.
-    """
-    axis_of = []  # axis of each step, None for a repeated cell
-    for a, b in zip(cells, cells[1:]):
-        axis_of.append(next(i for i in range(3) if a[i] != b[i]))
-    last_move = {}
-    for k, ax in enumerate(axis_of):
-        last_move[ax] = k  # last step along each axis
-    cur = list(start)
-    out: list[Point] = [tuple(cur)]
-    for k, ax in enumerate(axis_of):
-        if k + 1 < len(axis_of) and axis_of[k + 1] == ax:
-            continue  # same direction continues: not a corner
-        cur[ax] = goal[ax] if last_move[ax] == k else grid.center(cells[k + 1])[ax]
-        out.append(tuple(cur))
-    for ax in range(3):  # leftover sub-voxel offsets, one axis at a time
-        if cur[ax] != goal[ax]:
-            cur[ax] = goal[ax]
-            out.append(tuple(cur))
+
+def _simplify(grid: VoxelGrid, blocked: np.ndarray, pts: list[Point]) -> list[Point]:
+    """Greedy line-of-sight shortcut ("string pulling")."""
+    out = [pts[0]]
+    i = 0
+    while i < len(pts) - 1:
+        j = len(pts) - 1
+        while j > i + 1 and not _segment_free(grid, blocked, pts[i], pts[j]):
+            j -= 1
+        out.append(pts[j])
+        i = j
     return out
 
 
@@ -166,12 +179,10 @@ def plan_voxel_path(
     goal: Point,
     inflation_m: float = 0.25,
     unknown_is_obstacle: bool = True,
+    simplify: bool = True,
     blocked: np.ndarray | None = None,
 ) -> list[Point]:
-    """Plan a collision-free path from `start` to `goal` (meters). Returns the waypoints.
-
-    Every segment runs along one axis (x, y or z): the path never goes diagonally.
-    """
+    """Plan a collision-free path from `start` to `goal` (meters). Returns waypoints."""
     if blocked is None:
         blocked = blocked_mask(grid, inflation_m, unknown_is_obstacle)
     s_idx, g_idx = grid.index(start), grid.index(goal)
@@ -180,4 +191,7 @@ def plan_voxel_path(
             raise NoPathError(f"{name} {idx} is outside the grid")
         if blocked[idx]:
             raise NoPathError(f"{name} {idx} is inside an obstacle or its safety margin")
-    return _corners(grid, _astar(blocked, s_idx, g_idx), start, goal)
+    cells = _astar(blocked, s_idx, g_idx)
+    pts: list[Point] = [grid.center(c) for c in cells]
+    pts[0], pts[-1] = start, goal  # exact endpoints
+    return _simplify(grid, blocked, pts) if simplify else pts
