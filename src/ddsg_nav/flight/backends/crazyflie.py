@@ -42,6 +42,7 @@ class CrazyflieBackend(DroneBackend):
         self._scf: SyncCrazyflie | None = None
         self._pc: PositionHlCommander | None = None
         self._flying = False
+        self._z_cmd = 0.0  # highest drone-frame z of the current move: the height to land from
         self._traj_log: LogConfig | None = None
         self._t0 = time.monotonic()  # time base of `trajectory` and `clock()`
         self.trajectory: list[tuple[float, float, float, float]] = []  # (t, x, y, z), graph frame
@@ -99,6 +100,24 @@ class CrazyflieBackend(DroneBackend):
         ]
         safety.check_ground_height(heights)
 
+    def _reset_estimator(self) -> None:
+        """Zero the Kalman estimate, as MotionCommander does at take-off (hover test).
+
+        PositionHlCommander does not: its targets are absolute estimator coordinates, so an
+        estimate that drifted on the ground would shift and rotate the whole route.
+        """
+        assert self._scf is not None
+        self._scf.cf.param.set_value("kalman.resetEstimation", "1")
+        time.sleep(0.1)
+        self._scf.cf.param.set_value("kalman.resetEstimation", "0")
+        time.sleep(2.0)
+
+    def _check_armed(self) -> None:
+        info = self._read_log([("supervisor.info", "uint16_t")])[0]["supervisor.info"]
+        flags = safety.decode_supervisor(int(info))
+        if not (flags["isArmed"] or flags["canFly"]):
+            raise safety.SafetyError(f"drone did not arm {flags}: not taking off")
+
     def _start_trajectory_log(self) -> None:
         """Record the position estimate during the flight (async, 20 Hz)."""
         assert self._scf is not None
@@ -153,13 +172,16 @@ class CrazyflieBackend(DroneBackend):
         self.connect()
         assert self._scf is not None
         self.preflight()
+        self._reset_estimator()
         self._scf.cf.supervisor.send_arming_request(True)
         time.sleep(1.0)
+        self._check_armed()
         self._pc = PositionHlCommander(self._scf, x=0.0, y=0.0, z=0.0, default_velocity=0.2)
         self._start_trajectory_log()
         try:
             self._flying = True
-            self._pc.take_off(height=self.frame.to_drone((0.0, 0.0, height))[2], velocity=0.2)
+            self._z_cmd = self.frame.to_drone((0.0, 0.0, height))[2]
+            self._pc.take_off(height=self._z_cmd, velocity=0.2)
         except Exception:
             self.land()
             raise
@@ -168,7 +190,9 @@ class CrazyflieBackend(DroneBackend):
         if self._pc is None or not self._flying:
             raise RuntimeError("not flying: call takeoff() first")
         dx, dy, dz = self.frame.to_drone((x, y, z))
+        self._z_cmd = max(self._pc.get_position()[2], dz)
         self._pc.go_to(dx, dy, dz, velocity=velocity)
+        self._z_cmd = dz
 
     def position(self) -> Point:
         self.connect()
@@ -183,6 +207,14 @@ class CrazyflieBackend(DroneBackend):
         try:
             if self._pc is not None and self._flying:
                 self._flying = False
-                self._pc.land(velocity=0.2)
+                # Not PositionHlCommander.land(): it only learns its height when a move ends,
+                # so after an interrupted take-off it lands "from 0 m" in 0 s and cuts the
+                # motors in the air.
+                assert self._scf is not None
+                duration = max(self._pc.get_position()[2], self._z_cmd) / 0.2
+                hl = self._scf.cf.high_level_commander
+                hl.land(0.0, duration)
+                time.sleep(duration)
+                hl.stop()
         finally:
             self._stop_trajectory_log()
