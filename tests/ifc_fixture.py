@@ -11,11 +11,14 @@ One storey "3F" far from the origin, 2.8 m walls on a slab, plus an empty storey
           0      3        6        9 x   a column stands at the center of 205
 
 Options make the files a real export can produce: millimeter units, a wrong unit
-declaration, no space boundaries, a room without a door.
+declaration, no space boundaries, a room without a door, spaces without usable geometry,
+a rotated building, another offset from the origin, a stair and a slab opening.
 """
 from __future__ import annotations
 
 from pathlib import Path
+
+import math
 
 import ifcopenshell
 import ifcopenshell.api
@@ -49,13 +52,29 @@ DOORS = {  # name: (wall, x0, x1, rooms it bounds)
 }
 COLUMN = (7.3, 0.8, 7.7, 1.2)
 WALL_HEIGHT, SPACE_HEIGHT, DOOR_HEIGHT, SLAB_DEPTH = 2.8, 2.6, 2.1, 0.2
+BAD_SPACES = ("206", "207")  # 206: no geometry at all, 207: a sliver with almost no floor area
+SLIVER = (0.0, 5.3, 3.0, 5.3005)
+STAIR = (3.2, 4.3, 4.1, 5.1)  # in a corner of 202: three steps going up in +x
+STAIR_RISE = 0.2
+SLAB_VOID = (4.8, 4.0, 5.8, 5.0)  # hole in the floor slab, in another corner of 202
+
+
+def world(x: float, y: float, origin: tuple[float, float] = ORIGIN, rotation_deg: float = 0.0):
+    """Storey coordinates -> IFC world coordinates (meters)."""
+    c, s = math.cos(math.radians(rotation_deg)), math.sin(math.radians(rotation_deg))
+    return (origin[0] + c * x - s * y, origin[1] + s * x + c * y)
 
 
 def build_ifc(path: str | Path, unit: str = "m", declared_unit: str | None = None,
-              space_boundaries: bool = True, lab_door: bool = True) -> Path:
+              space_boundaries: bool = True, lab_door: bool = True, bad_spaces: bool = False,
+              origin: tuple[float, float] = ORIGIN, rotation_deg: float = 0.0,
+              stair_and_void: bool = False) -> Path:
     """Write the building to `path`. Coordinates are in `unit` ("m" or "mm"); the file
     declares `declared_unit` (default: the same). `space_boundaries=False` leaves out
-    every IfcRelSpaceBoundary; `lab_door=False` leaves room 204 without a door."""
+    every IfcRelSpaceBoundary; `lab_door=False` leaves room 204 without a door;
+    `bad_spaces=True` adds the two BAD_SPACES; `origin` and `rotation_deg` place and turn
+    the storey in the world (rotation about its origin, around z); `stair_and_void=True`
+    adds STAIR (an IfcStair) and SLAB_VOID (an opening in the floor slab) to room 202."""
     k = {"m": 1.0, "mm": 1000.0}[unit]
     declared = {"m": "METERS", "mm": "MILLIMETERS"}[declared_unit or unit]
     run = ifcopenshell.api.run
@@ -66,9 +85,13 @@ def build_ifc(path: str | Path, unit: str = "m", declared_unit: str | None = Non
     body = run("context.add_context", f, context_type="Model", context_identifier="Body",
                target_view="MODEL_VIEW", parent=model)
 
-    def placement(x: float, y: float, z: float, relative_to=None):
+    def placement(x: float, y: float, z: float, relative_to=None, turn_deg: float = 0.0):
         point = f.createIfcCartesianPoint((x * k, y * k, z * k))
-        return f.createIfcLocalPlacement(relative_to, f.createIfcAxis2Placement3D(point, None, None))
+        axis = ref = None
+        if turn_deg:
+            a = math.radians(turn_deg)
+            axis, ref = f.createIfcDirection((0.0, 0.0, 1.0)), f.createIfcDirection((math.cos(a), math.sin(a), 0.0))
+        return f.createIfcLocalPlacement(relative_to, f.createIfcAxis2Placement3D(point, axis, ref))
 
     def box(x0: float, y0: float, x1: float, y1: float, z0: float, z1: float):
         corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
@@ -87,7 +110,7 @@ def build_ifc(path: str | Path, unit: str = "m", declared_unit: str | None = Non
     for name, elevation in ((EMPTY_STOREY, ELEVATION - 3.6), (STOREY, ELEVATION)):
         s = run("root.create_entity", f, ifc_class="IfcBuildingStorey", name=name)
         s.Elevation = elevation * k
-        s.ObjectPlacement = placement(ORIGIN[0], ORIGIN[1], elevation)
+        s.ObjectPlacement = placement(origin[0], origin[1], elevation, turn_deg=rotation_deg)
         storeys[name] = s
     run("aggregate.assign_object", f, products=list(storeys.values()), relating_object=building)
     storey = storeys[STOREY]
@@ -103,10 +126,22 @@ def build_ifc(path: str | Path, unit: str = "m", declared_unit: str | None = Non
         sp = element("IfcSpace", name, box(x0, y0, x1, y1, 0.0, SPACE_HEIGHT))
         sp.LongName = long_name
         spaces[name] = sp
-    run("aggregate.assign_object", f, products=list(spaces.values()), relating_object=storey)
+    extra = []
+    if bad_spaces:
+        extra = [element("IfcSpace", BAD_SPACES[0], None),
+                 element("IfcSpace", BAD_SPACES[1], box(*SLIVER, 0.0, SPACE_HEIGHT))]
+    run("aggregate.assign_object", f, products=[*spaces.values(), *extra], relating_object=storey)
 
-    built = [element("IfcSlab", "Floor", box(-0.2, -0.2, 9.2, 5.4, -SLAB_DEPTH, 0.0)),
-             element("IfcColumn", "Column", box(*COLUMN, 0.0, WALL_HEIGHT))]
+    slab = element("IfcSlab", "Floor", box(-0.2, -0.2, 9.2, 5.4, -SLAB_DEPTH, 0.0))
+    built = [slab, element("IfcColumn", "Column", box(*COLUMN, 0.0, WALL_HEIGHT))]
+    if stair_and_void:
+        hole = element("IfcOpeningElement", "Slab opening", box(*SLAB_VOID, -SLAB_DEPTH - 0.1, 0.1))
+        run("feature.add_feature", f, feature=hole, element=slab)
+        x0, y0, x1, y1 = STAIR
+        tread = (x1 - x0) / 3
+        for i in range(3):
+            built.append(element("IfcStair", f"Stair:step {i + 1}",
+                                 box(x0 + i * tread, y0, x0 + (i + 1) * tread, y1, 0.0, (i + 1) * STAIR_RISE)))
     walls = {}
     for name, rect in WALLS.items():
         walls[name] = element("IfcWall", f"Basic Wall:{name}", box(*rect, 0.0, WALL_HEIGHT))
