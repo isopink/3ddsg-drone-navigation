@@ -27,7 +27,8 @@ DEFAULT_URI = uri_helper.uri_from_env(default="radio://0/80/2M/E7E7E7E7E7")
 HOVER_HEIGHT = 0.4   # m  (Flow deck is reliable around 0.3-0.5 m)
 MOVE_DISTANCE = 1.0  # m
 VELOCITY = 0.2       # m/s (slow on purpose)
-MIN_BATTERY_V = 3.7  # refuse to fly below this
+MIN_BATTERY_V = 3.7  # default: refuse to fly below this (change with --min-battery)
+BATTERY_FLOOR_V = 3.3  # never below this: the LiPo is empty and sags under 3 V in flight
 MIN_RECOMMENDED_HEIGHT = 0.2  # m, Flow deck v2 documented minimum
 MAX_TEST_HEIGHT = 2.0         # m, safety cap for this test script (Flow deck v2 range: up to 3 m)
 
@@ -200,7 +201,8 @@ def check_height_sensor(scf: SyncCrazyflie, n: int = 10) -> None:
         raise SystemExit(f"Height sensor value frozen at {vals[0]} mm. Not taking off.")
 
 
-def main(uri: str, height: float, distance: float, hover_time: float, live: bool = False) -> None:
+def main(uri: str, height: float, distance: float, hover_time: float, live: bool = False,
+         min_battery: float = MIN_BATTERY_V) -> None:
     if height < MIN_RECOMMENDED_HEIGHT:
         print(f"WARNING: {height} m is below the documented Flow deck v2 range "
               f"({MIN_RECOMMENDED_HEIGHT}-3.0 m). Height hold may be unreliable.")
@@ -212,8 +214,13 @@ def main(uri: str, height: float, distance: float, hover_time: float, live: bool
             raise SystemExit("Flow v2 deck not detected. Check seating / firmware.")
         vbat = read_battery(scf)
         print(f"Battery: {vbat:.2f} V")
+        if vbat < min_battery:
+            raise SystemExit(f"Battery too low (< {min_battery} V). Charge first, "
+                             f"or lower the limit with --min-battery (not below {BATTERY_FLOOR_V}).")
         if vbat < MIN_BATTERY_V:
-            raise SystemExit(f"Battery too low (< {MIN_BATTERY_V} V). Charge first.")
+            print(f"WARNING: battery {vbat:.2f} V is below {MIN_BATTERY_V} V. In flight it sags "
+                  "about 0.4-0.5 V: expect high motor output, shorter flights, and a drop if it "
+                  "reaches the firmware's cut-off. Keep the flight short and low.")
 
         sup = read_supervisor(scf)
         if sup.get("isLocked") or sup.get("isCrashed") or sup.get("isTumbled"):
@@ -262,5 +269,10 @@ if __name__ == "__main__":
     ap.add_argument("--hover-time", type=float, default=3.0, help="seconds to hover")
     ap.add_argument("--live", action="store_true",
                     help="print motor output (%% of max), height, position and battery 4x per second")
+    ap.add_argument("--min-battery", type=float, default=MIN_BATTERY_V,
+                    help=f"refuse to take off below this voltage (default {MIN_BATTERY_V}, "
+                         f"lowest allowed {BATTERY_FLOOR_V})")
     a = ap.parse_args()
-    main(a.uri, a.height, a.distance, a.hover_time, a.live)
+    if a.min_battery < BATTERY_FLOOR_V:
+        ap.error(f"--min-battery below {BATTERY_FLOOR_V} V is not allowed: the battery is empty")
+    main(a.uri, a.height, a.distance, a.hover_time, a.live, a.min_battery)
