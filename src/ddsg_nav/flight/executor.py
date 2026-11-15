@@ -9,14 +9,14 @@ from .backend import DroneBackend
 from .monitor import FlightAbort, FlightMonitor
 from .record import FlightRecorder
 
-MAX_VELOCITY = 0.3  # m/s, safety cap
+TESTED_VELOCITY = 0.3  # m/s, fastest speed checked so far; faster is allowed but untested
 
 
 def follow_path(
     backend: DroneBackend,
     waypoints: Sequence[Point],
     velocity: float = 0.2,
-    max_velocity: float = MAX_VELOCITY,
+    max_velocity: float | None = None,
     segment_pause: float = 0.0,
     on_waypoint: Callable[[int, Point], None] | None = None,
     monitor: FlightMonitor | None = None,
@@ -24,7 +24,7 @@ def follow_path(
 ) -> None:
     """Take off at the first waypoint's height, fly through all waypoints, land.
 
-    Always lands, also when something goes wrong. Speed is capped at `max_velocity`.
+    Always lands, also when something goes wrong. Speed is capped at `max_velocity` if given (no cap by default).
     `segment_pause` stops for that many seconds after each waypoint (use ~0.5 on a real drone).
     With a `monitor`, the drone is checked after take-off and after every waypoint, and a
     FlightAbort is raised (after landing) when a check fails.
@@ -33,7 +33,10 @@ def follow_path(
     """
     if not waypoints:
         raise ValueError("no waypoints")
-    velocity = min(velocity, max_velocity)
+    if velocity <= 0:
+        raise ValueError("velocity must be above 0")
+    if max_velocity is not None:
+        velocity = min(velocity, max_velocity)
     t0 = time.monotonic()
 
     def event(kind: str, message: str = "", **data) -> None:

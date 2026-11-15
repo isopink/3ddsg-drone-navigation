@@ -52,7 +52,7 @@ pytest                      # 212 tests, about 2 minutes, no drone needed
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
 
-**Speed.** `fly_route.py --velocity 0.2` sets the route speed in m/s. On the real drone, `hover_test.py --velocity 0.2` sets the forward speed of the hover test (take off, hover, 1 m forward, land). Both default to 0.2 m/s and are capped at 0.3 m/s.
+**Speed.** `fly_route.py --velocity 0.2` sets the route speed in m/s. On the real drone, `hover_test.py --velocity 0.2` sets the forward speed of the hover test (take off, hover, 1 m forward, land). Both default to 0.2 m/s. There is no maximum, but nothing faster than 0.3 m/s has been tested: the 25 cm margin assumes slow flight, and the Flow deck may lose track.
 
 **Optional LLM for goal parsing.** Copy `.env.example` to `.env` and set `DDSG_LLM_API_KEY`. It uses DeepSeek by default; any OpenAI-compatible API works if you change `DDSG_LLM_BASE_URL` and `DDSG_LLM_MODEL`. Without a key, only the rules run. `.env` is never committed.
 
@@ -95,7 +95,7 @@ It can contain lab graphs: share the report, not the folder.
 - **Goal parsing** (`goal.py`, `llm_goal.py`): rules for `from A to C`, `A방에서 C방으로`, `A -> C`. With an API key set, phrases the rules cannot resolve ("회의실 옆 방으로", "에이방에서 씨방으로") go to an LLM, which only picks room ids. The answer is checked against the graph, and route planning never depends on it. The scripts print which parser was used.
 - **`SceneGraph`** (`graph/model.py`): rooms, doors and a voxel map (free / occupied / unobserved). Everything downstream uses only this. A graph comes from a `GraphSource`: the fake graph, or a folder in the exchange format ([docs/graph_format.md](docs/graph_format.md)).
 - **Planning** (`planner/`): room sequence over the room graph, then A* on the voxels door to door, with a 25 cm safety margin. Unobserved voxels count as obstacles by default (`planner/policy.py`).
-- **Flight** (`flight/`): `follow_path` flies a path through a **`DroneBackend`**: the real Crazyflie (`backends/crazyflie.py`) or MuJoCo (`backends/mujoco_backend.py`). Speed is capped at 0.3 m/s and the drone always lands.
+- **Flight** (`flight/`): `follow_path` flies a path through a **`DroneBackend`**: the real Crazyflie (`backends/crazyflie.py`) or MuJoCo (`backends/mujoco_backend.py`). The drone always lands.
 - **Records**: `flight/record.py` collects status and events during `follow_path` and saves the run folder; `report.py` builds the HTML report, `viz/live.py` the Rerun view.
 - **Checks**: `flight/safety.py` before take-off, `flight/monitor.py` after every waypoint, `validate.py` for a graph (`scripts/graph_tools.py validate <folder>` explains why a graph cannot be planned on).
 

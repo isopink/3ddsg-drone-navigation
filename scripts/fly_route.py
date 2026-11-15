@@ -101,7 +101,7 @@ def main() -> int:
     ap.add_argument("--depth", type=float, default=2.0, help="room depth in m (y)")
     ap.add_argument("--door-width", type=float, default=1.0)
     ap.add_argument("--height", type=float, default=0.5)
-    ap.add_argument("--velocity", type=float, default=0.2)
+    ap.add_argument("--velocity", type=float, default=0.2, help="m/s, no maximum (above 0.3 is untested)")
     ap.add_argument("--margin", type=float, default=0.25)
     ap.add_argument("--max-deviation", type=float, default=0.5, help="abort if farther than this from the plan")
     ap.add_argument("--yaw", type=float, default=0.0, help="real drone: nose direction in degrees from +x")

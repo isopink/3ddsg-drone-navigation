@@ -2,7 +2,7 @@ import pytest
 
 from ddsg_nav.flight import safety
 from ddsg_nav.flight.backend import DroneBackend
-from ddsg_nav.flight.executor import MAX_VELOCITY, follow_path
+from ddsg_nav.flight.executor import follow_path
 
 
 class FakeBackend(DroneBackend):
@@ -39,10 +39,16 @@ def test_follow_path_order():
     assert b.calls[0] == ("takeoff", 0.5)
 
 
-def test_follow_path_caps_velocity():
+def test_follow_path_has_no_default_speed_cap():
     b = FakeBackend()
     follow_path(b, WAYPOINTS, velocity=5.0)
-    assert all(c[4] == MAX_VELOCITY for c in b.calls if c[0] == "go_to")
+    assert all(c[4] == 5.0 for c in b.calls if c[0] == "go_to")
+
+
+def test_follow_path_caps_velocity_when_asked():
+    b = FakeBackend()
+    follow_path(b, WAYPOINTS, velocity=5.0, max_velocity=0.3)
+    assert all(c[4] == 0.3 for c in b.calls if c[0] == "go_to")
 
 
 def test_follow_path_lands_on_error():
