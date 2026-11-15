@@ -38,7 +38,7 @@
       지금까지 실제로 날려 본 유일한 코드입니다.
 
  [4] 시뮬레이션으로 먼저 돌려 보기
-      python scripts\fly_route.py --backend sim --live --rooms 2 2 --depth 2 "from A to B"
+      python scripts\fly_route.py --backend sim --rooms 2 2 --depth 2 "from A to B"
 
  [5] 실제 경로 비행
       python scripts\fly_route.py --backend crazyflie --rooms 2 2 --depth 2 "from A to B"
@@ -64,27 +64,13 @@
 
 
 ------------------------------------------------------------------------------
- 3. 비행 결과 보기
-------------------------------------------------------------------------------
- 기록은 runs\<시간>\ 에 저장됩니다. <시간> 은 실제 폴더 이름으로 바꾸세요.
-
-      python scripts\flight_report.py runs\<시간> --open
-      python scripts\replay_run.py runs\<시간>
-
- 첫 줄은 보고서(report.html), 둘째 줄은 Rerun 3D 뷰어로 재생합니다.
- 모든 기록의 보고서:  python scripts\flight_report.py runs --all
-
-
-------------------------------------------------------------------------------
- 4. 전체 명령 목록   (앞에 python scripts\ 를 붙입니다)
+ 3. 전체 명령 목록   (앞에 python scripts\ 를 붙입니다)
 ------------------------------------------------------------------------------
  fly_route.py           경로 계획 후 비행 (시뮬레이션, 실기체)
  demo_sim.py            화면 없이 시뮬레이션만 실행
  check_sensors.py       날지 않고 센서 점검
  prop_test.py           프로펠러만 돌려 보기
  hover_test.py          호버링과 전진 비행 점검
- flight_report.py       비행 보고서 만들기
- replay_run.py          저장된 비행을 Rerun 으로 재생
  ifc_to_graph.py        IFC 건물 모델 한 층을 그래프 파일로 변환
  graph_tools.py         내보낸 그래프 검사 (validate <폴더>)
  check_routes.py        경로 충돌 검사와 Open3D 시각화
@@ -95,7 +81,7 @@
 
 
 ------------------------------------------------------------------------------
- 5. 날리기 전에 확인  (어기면 추락할 수 있습니다)
+ 4. 날리기 전에 확인  (어기면 추락할 수 있습니다)
 ------------------------------------------------------------------------------
  * 밝은 방, 무늬 있는 바닥.
    어두운 곳에서는 광학 흐름 센서가 실패해서 위치 추정이 틀어지고,

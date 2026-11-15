@@ -54,7 +54,7 @@ Manual setup:
 py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
-pip install -e ".[neo4j,viz,sim,live,dev]"
+pip install -e ".[neo4j,viz,sim,dev]"
 pytest                      # 212 tests, ~2 min, no drone needed
 
 python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
@@ -72,32 +72,13 @@ Optional LLM goal parsing: copy `.env.example` to `.env` and set `DDSG_LLM_API_K
 - The simulator has no sensor model: it does not reproduce Flow deck drift.
 - `backends/crazyflie.py` has not been flight-tested; only `scripts/hover_test.py` was flown.
 
-## Flight reports
-
-Every `fly_route.py` run is saved to `runs/<time>/` (git-ignored) with `report.html`: plan, simulation and real flight side by side, with top view, deviation, height, battery, 3D view and event log. `--live` streams the flight to [Rerun](https://rerun.io).
-
-<p align="center">
-  <img src="docs/media/flight_report_overview.png" alt="Flight report overview" width="100%">
-  <img src="docs/media/flight_report_3d.png" alt="Flight report 3D view" width="100%">
-  <br>
-  <sub>Blue: plan. Orange: simulation. Green: real flight, <b>synthetic here</b> to show the layout; the real drone has not flown a route yet.</sub>
-</p>
-
-```
-python scripts\flight_report.py runs\<time> --open
-python scripts\replay_run.py runs\<time>
-```
-
-Run folders can contain lab graphs: share the report, not the folder.
-
 ## Layout
 
 ```
-src/ddsg_nav/   graph/  goal.py  llm_goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/  report.py
+src/ddsg_nav/   graph/  goal.py  llm_goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/
 scripts/        fly_route.py  hover_test.py  check_sensors.py  graph_tools.py  manual.txt  ...
 tests/          run without a drone
 data/           local graphs, never committed
-runs/           flight records, never committed
 docs/           graph_format.md (graph exchange format), media/
 ```
 

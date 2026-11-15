@@ -18,8 +18,6 @@ neo4j = ["neo4j"]
 ifc = ["ifcopenshell"]  # scripts/ifc_to_graph.py
 viz = ["open3d"]
 sim = ["mujoco"]
-live = ["rerun-sdk"]
-report = ["plotly"]  # only for flight_report.py --offline
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]
