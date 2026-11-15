@@ -188,6 +188,18 @@ def test_real_drone_is_not_flown_when_the_dry_run_fails(capsys, folder, monkeypa
     assert FakeDrone.made == []
 
 
+def test_real_drone_checks_at_waypoints_unless_asked(capsys, folder):
+    """Stop-and-go every 0.1 m is not flown on the real drone by default (untested there)."""
+    def go_tos(*extra):
+        FakeDrone.made = []
+        code, out = run(capsys, "--backend", "crazyflie", "--graph", folder, *extra, "from A to B")
+        assert code == 0, out
+        return sum(c[0] == "go_to" for c in FakeDrone.made[0].calls)
+
+    plain, stepped = go_tos(), go_tos("--check-step", 0.1)
+    assert plain < 10 and stepped > 3 * plain
+
+
 def test_real_drone_gets_the_start_pose(capsys, folder):
     code, out = run(capsys, "--backend", "crazyflie", "--graph", folder, "--velocity", 0.3,
                     "--start", 0.6, 2.2, "--yaw", 90, "from A to B")
