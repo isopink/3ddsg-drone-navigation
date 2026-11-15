@@ -36,13 +36,40 @@ Windows, Python 3.12. Real flights need a Crazyflie 2.1 with Flow deck v2 and a 
 py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
-pip install -e ".[neo4j,viz,sim,dev]"
-pytest                      # 167 tests, about 2 minutes, no drone needed
+pip install -e ".[neo4j,viz,sim,live,dev]"
+pytest                      # 181 tests, about 2 minutes, no drone needed
 
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
 
 **Optional LLM for goal parsing.** Copy `.env.example` to `.env` and set `DDSG_LLM_API_KEY`. It uses DeepSeek by default; any OpenAI-compatible API works if you change `DDSG_LLM_BASE_URL` and `DDSG_LLM_MODEL`. Without a key, only the rules run. `.env` is never committed.
+
+## Flight dashboards
+
+<p align="center">
+  <img src="docs/media/flight_report_overview.png" alt="Flight report: result, figures, plan vs simulation vs real flight on the top view, distance from the plan and height over time" width="100%">
+  <img src="docs/media/flight_report_3d.png" alt="Flight report 3D view: occupied voxels, plan and both flights" width="100%">
+  <br>
+  <sub>The flight report for "go from A to C". Blue is the plan, orange the simulation dry run, green the real flight. <b>The green "real flight" here is synthetic</b> (the simulated track with added drift and a falling battery) to show the layout: the real drone has not flown a route yet.</sub>
+</p>
+
+Every `fly_route.py` run is saved to `runs/<time>/` (git-ignored) with a **flight report**:
+
+- **`report.html`**: one page per run with the plan, the simulation dry run and the real flight side by side.
+  It shows a top view on the occupancy map, distance from the plan and height over time, battery, a 3D view, and the event log (take-off, waypoints, monitor abort, landing).
+  It loads Plotly from a CDN; `--offline` embeds it instead.
+- **Live view (`--live`)**: the map, the plan and the drone in [Rerun](https://rerun.io) while it flies.
+  The simulation then runs at wall-clock speed. The stream is also saved as `runs/<time>/flight.rrd`.
+
+```
+cf-env\Scripts\python scripts\fly_route.py --backend sim --live "go from A to C"
+cf-env\Scripts\python scripts\flight_report.py runs\<time> --open    # rebuild and open a report
+cf-env\Scripts\python scripts\flight_report.py runs --all            # every run
+cf-env\Scripts\python scripts\replay_run.py runs\<time>              # replay a run in Rerun
+```
+
+A run folder holds `run.json` (plan; per flight: result, comparison, status samples, events), `graph/` (the map flown on) and `flight_N.csv` (trajectories).
+It can contain lab graphs: share the report, not the folder.
 
 ## How it fits together
 
@@ -56,6 +83,7 @@ cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2
 - **`SceneGraph`** (`graph/model.py`): rooms, doors and a voxel map (free / occupied / unobserved). Everything downstream uses only this. A graph comes from a `GraphSource`: the fake graph, or a folder in the exchange format ([docs/graph_format.md](docs/graph_format.md)).
 - **Planning** (`planner/`): room sequence over the room graph, then A* on the voxels door to door, with a 25 cm safety margin. Unobserved voxels count as obstacles by default (`planner/policy.py`).
 - **Flight** (`flight/`): `follow_path` flies a path through a **`DroneBackend`**: the real Crazyflie (`backends/crazyflie.py`) or MuJoCo (`backends/mujoco_backend.py`). Speed is capped at 0.3 m/s and the drone always lands.
+- **Records**: `flight/record.py` collects status and events during `follow_path` and saves the run folder; `report.py` builds the HTML report, `viz/live.py` the Rerun view.
 - **Checks**: `flight/safety.py` before take-off, `flight/monitor.py` after every waypoint, `validate.py` for a graph (`scripts/graph_tools.py validate <folder>` explains why a graph cannot be planned on).
 
 ## Where help is needed
@@ -82,9 +110,10 @@ cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2
 ## Layout
 
 ```
-src/ddsg_nav/   graph/  goal.py  llm_goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/
-scripts/        fly_route.py  graph_tools.py  step0_hover_test.py  step0_prop_test.py  ...
+src/ddsg_nav/   graph/  goal.py  llm_goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/  report.py
+scripts/        fly_route.py  flight_report.py  replay_run.py  graph_tools.py  step0_hover_test.py  ...
 tests/          run without a drone
 data/           local graphs, never committed
+runs/           flight records and reports, never committed
 docs/           graph_format.md, media/
 ```

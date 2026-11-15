@@ -10,18 +10,25 @@ Run from the repository root:
     # real drone: runs the simulation as a dry run first, then asks you to confirm
     cf-env\\Scripts\\python scripts\\fly_route.py --backend crazyflie --rooms 2 2 --depth 2 "A -> B"
 
+    # watch it live in Rerun (the simulation then runs at wall-clock speed)
+    cf-env\\Scripts\\python scripts\\fly_route.py --backend sim --live "go from A to C"
+
+Every run is saved to runs/<time>/ with a flight report (report.html): plan vs simulation
+vs real flight. Rebuild it with scripts/flight_report.py, replay it with scripts/replay_run.py.
+
 Fly in a bright room over a textured floor (Step 0 lesson), 30 cm to 1 m high.
 Ctrl+C lands the drone.
 """
 import argparse
+import contextlib
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
-from ddsg_nav.flight.compare import compare_to_plan, save_trajectory
+from ddsg_nav.flight.compare import compare_to_plan
 from ddsg_nav.flight.executor import follow_path
 from ddsg_nav.flight.monitor import FlightAbort, FlightMonitor
+from ddsg_nav.flight.record import FlightRecorder, FlightRun, new_run_folder, plan_dict, save_run
 from ddsg_nav.goal import GoalError, parse_goal
 from ddsg_nav.llm_goal import llm_from_env
 from ddsg_nav.graph.fake import build_row_graph
@@ -41,14 +48,39 @@ def make_monitor(graph, waypoints, max_deviation: float) -> FlightMonitor:
     return FlightMonitor(bounds=Box(tuple(lo), tuple(hi)), path=waypoints, max_deviation_m=max_deviation)
 
 
-def fly(backend, plan, graph, velocity, pause, max_deviation):
+def fly(backend, plan, graph, velocity, pause, max_deviation, label, kind, live=None):
+    """Fly the plan. Returns (why it was aborted or None, the FlightRecorder)."""
     monitor = make_monitor(graph, plan.waypoints, max_deviation)
+    listeners = [live.listener(label, battery=kind != "sim")] if live is not None else []
+    recorder = FlightRecorder(label, kind, clock=backend.clock, listeners=listeners)
     aborted = None
+    follow = live.follow(label, backend) if live is not None else contextlib.nullcontext()
     try:
-        follow_path(backend, plan.waypoints, velocity=velocity, segment_pause=pause, monitor=monitor)
+        with follow:
+            follow_path(backend, plan.waypoints, velocity=velocity, segment_pause=pause,
+                        monitor=monitor, recorder=recorder)
     except FlightAbort as e:
         aborted = str(e)
-    return aborted
+    except KeyboardInterrupt:
+        aborted = "interrupted by the user"
+    return aborted, recorder
+
+
+def save(folder, graph, plan, flights, args):
+    meta = {
+        "text": args.text, "backend": args.backend, "rooms": args.rooms, "depth": args.depth,
+        "door_width": args.door_width, "height": args.height, "velocity": args.velocity,
+        "margin": args.margin, "max_deviation": args.max_deviation, "yaw": args.yaw,
+        "goal_source": getattr(args, "goal_source", None),
+    }
+    save_run(FlightRun(graph=graph, plan=plan_dict(plan), flights=flights, meta=meta), folder)
+    print(f"\nrun saved to {folder}")
+    try:
+        from ddsg_nav.report import write_report
+
+        print(f"flight report: {write_report(folder)}")
+    except Exception as e:  # the flight data is saved; a report problem must not hide that
+        print(f"could not write the flight report: {e}")
 
 
 def report(label, backend, plan, aborted):
@@ -75,6 +107,8 @@ def main() -> int:
     ap.add_argument("--yaw", type=float, default=0.0, help="real drone: nose direction in degrees from +x")
     ap.add_argument("--uri", default="radio://0/80/2M")
     ap.add_argument("--skip-dry-run", action="store_true", help="real drone: do not simulate first")
+    ap.add_argument("--live", action="store_true", help="show the flight live in Rerun (pip install rerun-sdk)")
+    ap.add_argument("--runs", default=str(RUNS), help="folder for run records (default: runs)")
     a = ap.parse_args()
 
     graph = build_row_graph(a.rooms, a.depth, a.door_width)
@@ -85,6 +119,7 @@ def main() -> int:
     try:
         goal = parse_goal(a.text, graph, llm=llm_from_env())
         print(f"goal: {goal.start} -> {goal.goal} (parsed by {goal.source})")
+        a.goal_source = goal.source
         plan = plan_route(graph, goal.start, goal.goal, a.height, a.margin)
     except (GoalError, NoPathError, KeyError) as e:
         print(f"cannot plan: {e}")
@@ -99,21 +134,31 @@ def main() -> int:
         return 1
 
     start = plan.waypoints[0]
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    folder = new_run_folder(a.runs)
+    flights = []
+    live = None
+    if a.live:
+        from ddsg_nav.viz.live import LiveView
+
+        live = LiveView(save=folder / "flight.rrd")
+        live.log_scene(graph, plan)
 
     if a.backend == "sim" or not a.skip_dry_run:
         from ddsg_nav.flight.backends.mujoco_backend import MuJoCoBackend
 
-        sim = MuJoCoBackend(graph, (start[0], start[1], 0.0))
-        aborted = fly(sim, plan, graph, a.velocity, 0.0, a.max_deviation)
-        report("simulation" + (" (dry run)" if a.backend != "sim" else ""), sim, plan, aborted)
+        label = "simulation" + (" (dry run)" if a.backend != "sim" else "")
+        # with a real drone the dry run stays fast: the real flight is the one to watch
+        sim = MuJoCoBackend(graph, (start[0], start[1], 0.0), realtime=a.live and a.backend == "sim")
+        aborted, rec = fly(sim, plan, graph, a.velocity, 0.0, a.max_deviation, label, "sim", live)
+        report(label, sim, plan, aborted)
         print(f"wall contacts in the simulation: {sim.collisions}")
+        flights.append(rec.finish(sim.trajectory, plan.waypoints, aborted, sim.collisions))
         if a.backend == "sim":
-            path = save_trajectory(RUNS / f"{stamp}_sim.csv", sim.trajectory)
-            print(f"trajectory saved to {path}")
+            save(folder, graph, plan, flights, a)
             return 0 if (not aborted and sim.collisions == 0) else 1
         if aborted or sim.collisions:
             print("the dry run failed: not flying the real drone")
+            save(folder, graph, plan, flights, a)
             return 1
 
     from ddsg_nav.flight.backends.crazyflie import CrazyflieBackend
@@ -124,14 +169,12 @@ def main() -> int:
     time.sleep(8)
     drone = CrazyflieBackend(a.uri, frame=Transform((start[0], start[1], 0.0), a.yaw))
     try:
-        aborted = fly(drone, plan, graph, a.velocity, 0.5, a.max_deviation)
-    except KeyboardInterrupt:
-        aborted = "interrupted by the user"
+        aborted, rec = fly(drone, plan, graph, a.velocity, 0.5, a.max_deviation, "real flight", "crazyflie", live)
     finally:
         drone.close()
     report("real flight", drone, plan, aborted)
-    if drone.trajectory:
-        print(f"trajectory saved to {save_trajectory(RUNS / f'{stamp}_crazyflie.csv', drone.trajectory)}")
+    flights.append(rec.finish(drone.trajectory, plan.waypoints, aborted))
+    save(folder, graph, plan, flights, a)
     return 0 if not aborted else 1
 
 

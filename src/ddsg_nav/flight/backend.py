@@ -5,6 +5,7 @@ Coordinates are graph coordinates in meters (x, y, z up).
 """
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -32,6 +33,13 @@ class DroneBackend(ABC):
     @abstractmethod
     def position(self) -> Point:
         """Best available position estimate."""
+
+    def clock(self) -> float:
+        """Current time in seconds, on the same base as the backend's `trajectory` samples.
+
+        Flight records use it so status samples, events and positions line up.
+        """
+        return time.monotonic()
 
     def status(self) -> Status:
         """Battery, drone state and position for the flight monitor. Optional to override."""

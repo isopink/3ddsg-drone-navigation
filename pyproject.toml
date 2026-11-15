@@ -17,6 +17,8 @@ dependencies = [
 neo4j = ["neo4j"]
 viz = ["open3d"]
 sim = ["mujoco"]
+live = ["rerun-sdk"]
+report = ["plotly"]  # only for flight_report.py --offline
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]

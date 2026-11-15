@@ -43,7 +43,7 @@ class CrazyflieBackend(DroneBackend):
         self._pc: PositionHlCommander | None = None
         self._flying = False
         self._traj_log: LogConfig | None = None
-        self._t0 = 0.0
+        self._t0 = time.monotonic()  # time base of `trajectory` and `clock()`
         self.trajectory: list[tuple[float, float, float, float]] = []  # (t, x, y, z), graph frame
 
     # -- connection ---------------------------------------------------------
@@ -103,7 +103,6 @@ class CrazyflieBackend(DroneBackend):
         """Record the position estimate during the flight (async, 20 Hz)."""
         assert self._scf is not None
         self.trajectory = []
-        self._t0 = time.monotonic()
         lg = LogConfig(name="traj", period_in_ms=50)
         for v in ("stateEstimate.x", "stateEstimate.y", "stateEstimate.z"):
             lg.add_variable(v, "float")
@@ -146,6 +145,9 @@ class CrazyflieBackend(DroneBackend):
         return Status(battery_v=float(s["pm.vbat"]), flags=flags, position=pos)
 
     # -- DroneBackend -------------------------------------------------------
+    def clock(self) -> float:
+        return time.monotonic() - self._t0
+
     def takeoff(self, height: float) -> None:
         self.connect()
         assert self._scf is not None
