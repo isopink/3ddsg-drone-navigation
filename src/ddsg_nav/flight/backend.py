@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 from ..graph.model import Point
 
 
+RANGE_DIRECTIONS = ("front", "back", "left", "right", "up")  # the deck does not look down
+
+
 @dataclass(frozen=True)
 class Status:
     """What a backend can tell about the drone right now. Unknown values stay None / empty."""
@@ -19,6 +22,9 @@ class Status:
     battery_v: float | None = None
     flags: dict[str, bool] = field(default_factory=dict)  # e.g. isLocked, isCrashed, isTumbled
     position: Point | None = None
+    # Multi-ranger distances in meters, keys from RANGE_DIRECTIONS. A direction with nothing
+    # in range is left out; a backend without the deck leaves the dict empty.
+    ranges: dict[str, float] = field(default_factory=dict)
 
 
 class DroneBackend(ABC):

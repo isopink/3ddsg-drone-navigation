@@ -11,7 +11,7 @@ import networkx as nx
 
 from .graph.model import Box, SceneGraph, VoxelState
 from .planner.local_planner import NoPathError, plan_voxel_path
-from .planner.policy import UnknownPolicy, blocked_mask, raw_obstacles
+from .planner.policy import PolicyLike, UnknownPolicy, blocked_mask, policy_label, raw_obstacles
 from .planner.route import nearest_free_point
 
 
@@ -66,7 +66,7 @@ def validate_graph(
     graph: SceneGraph,
     flight_height: float = 0.5,
     inflation_m: float = 0.25,
-    policy: "bool | str | UnknownPolicy" = UnknownPolicy.OBSTACLE,
+    policy: PolicyLike = UnknownPolicy.OBSTACLE,
     check_connectivity: bool = True,
 ) -> ValidationReport:
     """Check structure, geometry and flyability at `flight_height` above each floor
@@ -94,7 +94,7 @@ def validate_graph(
             "warning",
             "mostly-unknown",
             f"{rep.stats['unknown_ratio']:.0%} of the voxels are unobserved; with policy "
-            f"'{UnknownPolicy.coerce(policy).value}' most routes may be impossible",
+            f"'{policy_label(policy)}' most routes may be impossible",
         )
 
     extent = _grid_box(graph)
@@ -190,5 +190,5 @@ def validate_graph(
                     rep.add("error", "door-unreachable", f"cannot fly from room {rid} to door {door.id}: {e}")
 
     rep.add("info", "checked", f"flight height {flight_height} m, margin {inflation_m} m, "
-            f"unknown policy '{UnknownPolicy.coerce(policy).value}'")
+            f"unknown policy '{policy_label(policy)}'")
     return rep

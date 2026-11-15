@@ -25,7 +25,7 @@ from ddsg_nav.graph.source import FakeGraphSource, FileGraphSource
 from ddsg_nav.graph.transform import Transform
 from ddsg_nav.planner.collision import check_path
 from ddsg_nav.planner.local_planner import NoPathError
-from ddsg_nav.planner.policy import UnknownPolicy, raw_obstacles
+from ddsg_nav.planner.policy import ElementPolicy, UnknownPolicy, raw_obstacles
 from ddsg_nav.planner.route import plan_route
 from ddsg_nav.validate import validate_graph
 
@@ -162,6 +162,50 @@ def test_free_in_rooms_keeps_unknown_outside_rooms_blocked():
     g.voxels.fill_box(Box((1.0, 3.0, 0.0), (2.0, 3.1, 2.5)), VoxelState.UNKNOWN)
     mask = raw_obstacles(g, UnknownPolicy.FREE_IN_ROOMS)
     assert mask[g.voxels.index((1.5, 3.05, 0.5))]
+
+
+def _graph_with_unknown_room_b_and_doors():
+    g = _graph_with_unknown_in_room_b()
+    for x in (3.0, 6.0):  # both door openings of B
+        g.voxels.fill_box(Box((x - 0.1, 1.0, 0.0), (x + 0.1, 2.0, 2.0)), VoxelState.UNKNOWN)
+    return g
+
+
+def test_element_policy_default_and_all_free_match_global_policies():
+    g = _graph_with_unknown_room_b_and_doors()
+    assert np.array_equal(raw_obstacles(g, ElementPolicy()), raw_obstacles(g, UnknownPolicy.OBSTACLE))
+    all_free = ElementPolicy(wall="free", door="free", furniture="free")
+    assert np.array_equal(raw_obstacles(g, all_free), raw_obstacles(g, UnknownPolicy.FREE))
+    with pytest.raises(ValueError):
+        ElementPolicy(door="free_in_rooms")
+
+
+def test_element_policy_sets_each_type_separately():
+    g = _graph_with_unknown_room_b_and_doors()
+    g.voxels.fill_box(Box((1.0, 3.0, 0.0), (2.0, 3.1, 2.5)), VoxelState.UNKNOWN)  # in the north wall
+    wall = g.voxels.index((1.5, 3.05, 0.5))
+    door = g.voxels.index((3.05, 1.5, 0.5))
+    furniture = g.voxels.index((4.5, 1.5, 0.5))
+    for free in ("wall", "door", "furniture"):
+        mask = raw_obstacles(g, ElementPolicy(**{free: "free"}))
+        assert [bool(mask[i]) for i in (wall, door, furniture)] == [
+            name != free for name in ("wall", "door", "furniture")
+        ]
+
+
+def test_route_needs_door_and_furniture_free():
+    g = _graph_with_unknown_room_b_and_doors()
+    for policy in (ElementPolicy(), ElementPolicy(door="free"), ElementPolicy(furniture="free")):
+        with pytest.raises(NoPathError):
+            plan_route(g, "A", "C", unknown_is_obstacle=policy)
+    policy = ElementPolicy(door="free", furniture="free")
+    plan = plan_route(g, "A", "C", unknown_is_obstacle=policy)
+    assert plan.rooms == ["A", "B", "C"]
+    assert check_path(g, plan.waypoints, unknown_is_obstacle=policy).ok
+    assert not check_path(g, plan.waypoints).ok
+    report = validate_graph(g, policy=policy)
+    assert report.ok and "door=free" in report.format(), report.format()
+    assert not validate_graph(g, policy=ElementPolicy(furniture="free")).ok
 
 
 # ---- validation ------------------------------------------------------------
