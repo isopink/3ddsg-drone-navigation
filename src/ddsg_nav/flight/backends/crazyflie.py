@@ -22,9 +22,10 @@ from cflib.positioning.position_hl_commander import PositionHlCommander
 from ...graph.model import Point
 from ...graph.transform import Transform
 from .. import safety
-from ..backend import DroneBackend, Status
+from ..backend import RANGE_DIRECTIONS, DroneBackend, Status
 
 DEFAULT_URI = "radio://0/80/2M"
+RANGE_INVALID_MM = 8000  # Multi-ranger reach is ~4 m; it reports 32767 when nothing is in view
 
 
 class CrazyflieBackend(DroneBackend):
@@ -44,6 +45,7 @@ class CrazyflieBackend(DroneBackend):
         self._flying = False
         self._z_cmd = 0.0  # highest drone-frame z of the current move: the height to land from
         self._traj_log: LogConfig | None = None
+        self._multiranger: bool | None = None  # None: not asked yet
         self._t0 = time.monotonic()  # time base of `trajectory` and `clock()`
         self.trajectory: list[tuple[float, float, float, float]] = []  # (t, x, y, z), graph frame
 
@@ -63,6 +65,7 @@ class CrazyflieBackend(DroneBackend):
             if self._scf is not None:
                 self._scf.close_link()
                 self._scf = None
+                self._multiranger = None
 
     # -- helpers ------------------------------------------------------------
     def _read_log(self, variables: list[tuple[str, str]], samples: int = 1) -> list[dict]:
@@ -149,6 +152,26 @@ class CrazyflieBackend(DroneBackend):
             except Exception as e:  # never let cleanup break the landing
                 print(f"log cleanup warning: {e}")
 
+    def _multiranger_attached(self) -> bool:
+        """Multi-ranger deck present (deck.bcMultiranger)? Asked once per connection."""
+        if self._multiranger is None:
+            assert self._scf is not None
+            try:
+                self._multiranger = int(self._scf.cf.param.get_value("deck.bcMultiranger")) == 1
+            except Exception:  # parameter unknown or unreadable: fly as without the deck
+                self._multiranger = False
+        return self._multiranger
+
+    def _read_ranges(self) -> dict[str, float]:
+        """Multi-ranger distances in meters; directions with nothing in view are left out.
+
+        A log block of its own: with the 18 bytes of the status block the 5 uint16 values
+        would pass the 26-byte limit. SyncLogger deletes the block when the read is done.
+        """
+        s = self._read_log([(f"range.{d}", "uint16_t") for d in RANGE_DIRECTIONS])[0]
+        mm = {d: int(s[f"range.{d}"]) for d in RANGE_DIRECTIONS}
+        return {d: v / 1000.0 for d, v in mm.items() if v < RANGE_INVALID_MM}
+
     def status(self) -> Status:
         self.connect()
         s = self._read_log(
@@ -162,7 +185,8 @@ class CrazyflieBackend(DroneBackend):
         )[0]
         flags = safety.decode_supervisor(int(s["supervisor.info"]))
         pos = self.frame.to_graph((s["stateEstimate.x"], s["stateEstimate.y"], s["stateEstimate.z"]))
-        return Status(battery_v=float(s["pm.vbat"]), flags=flags, position=pos)
+        ranges = self._read_ranges() if self._multiranger_attached() else {}
+        return Status(battery_v=float(s["pm.vbat"]), flags=flags, position=pos, ranges=ranges)
 
     # -- DroneBackend -------------------------------------------------------
     def clock(self) -> float:

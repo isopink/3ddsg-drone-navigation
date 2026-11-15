@@ -332,3 +332,98 @@ def test_lands_when_take_off_fails(cf):
     assert cf.names()[-2:] == ["land", "stop"]
     assert cf.blocks == []
     drone.close()
+
+
+# ---- Multi-ranger deck -----------------------------------------------------
+
+from ddsg_nav.flight.monitor import FlightAbort, FlightMonitor  # noqa: E402
+
+TYPE_BYTES = {"float": 4, "uint16_t": 2, "uint8_t": 1}
+FAR = {"front": 32767, "back": 32767, "left": 32767, "right": 32767, "up": 32767}  # nothing in view
+
+
+class SizedLogConfig(FakeLogConfig):
+    """Refuses a block the real drone would refuse (26 bytes of log data)."""
+
+    def add_variable(self, name, typ):
+        super().add_variable(name, typ)
+        self.size = getattr(self, "size", 0) + TYPE_BYTES[typ]
+        assert self.size <= 26, f"log block {self.name} is {self.size} bytes: {self.vars}"
+
+
+def _add_multiranger(cf, monkeypatch, mm, present="1"):
+    """Give the fake drone the deck parameter and the 5 range variables (values in mm)."""
+    cf.ranges_mm = dict(mm)
+    cf.get_value = lambda name: {"deck.bcMultiranger": present}[name]
+    base_read = cf.read
+
+    def read(var):
+        if var.startswith("range.") and var != "range.zrange":
+            return cf.ranges_mm[var.split(".")[1]]
+        return base_read(var)
+
+    cf.read = read
+    monkeypatch.setattr(cfmod, "LogConfig", SizedLogConfig)
+
+
+def test_ranges_with_the_deck_are_in_meters(cf, monkeypatch):
+    _add_multiranger(cf, monkeypatch, {"front": 1234, "back": 250, "left": 32767, "right": 3999, "up": 8000})
+    drone = cfmod.CrazyflieBackend()
+    drone.takeoff(0.5)
+    s = drone.status()
+    # left (32767) and up (8000): nothing in view, left out
+    assert s.ranges == pytest.approx({"front": 1.234, "back": 0.25, "right": 3.999})
+    assert s.battery_v == pytest.approx(4.0) and s.position == pytest.approx((0.0, 0.0, 0.0))
+    assert cf.blocks == ["traj"]  # the range block is deleted after the read
+    drone.close()
+    assert cf.blocks == []
+
+
+@pytest.mark.parametrize("present", [None, "0"])
+def test_no_ranges_without_the_deck(cf, monkeypatch, present):
+    if present is not None:  # parameter there but 0; None: the fake has no such parameter
+        _add_multiranger(cf, monkeypatch, {}, present)  # reading a range would raise KeyError
+    drone = cfmod.CrazyflieBackend()
+    drone.takeoff(0.5)
+    assert drone.status().ranges == {}
+    FlightMonitor().check(drone.status())
+    drone.close()
+
+
+def test_the_deck_is_asked_once_per_connection(cf, monkeypatch):
+    _add_multiranger(cf, monkeypatch, FAR)
+    asked = []
+    get = cf.get_value
+    cf.get_value = lambda name: asked.append(name) or get(name)
+    drone = cfmod.CrazyflieBackend()
+    drone.status(), drone.status()
+    assert asked == ["deck.bcMultiranger"]
+    drone.close()
+    drone.status()
+    assert len(asked) == 2
+    drone.close()
+
+
+def test_monitor_lands_the_drone_near_an_obstacle(cf, monkeypatch):
+    _add_multiranger(cf, monkeypatch, FAR)
+    drone = cfmod.CrazyflieBackend()
+    wps = [(0.0, 0.0, 0.5), (0.5, 0.0, 0.5), (1.0, 0.0, 0.5)]
+
+    def on_waypoint(i, wp):
+        if i == 0:
+            cf.ranges_mm["front"] = 150  # a hand comes close
+
+    with pytest.raises(FlightAbort, match="0.15 m to the front"):
+        follow_path(drone, wps, monitor=FlightMonitor(), on_waypoint=on_waypoint)
+    # waypoint 0 is the take-off point (no move); waypoint 2 was not flown
+    assert [g[0] for g in cf.sent("go_to")] == [0.5]
+    assert cf.names()[-2:] == ["land", "stop"] and cf.blocks == []
+    drone.close()
+
+
+def test_monitor_ignores_far_and_empty_readings(cf, monkeypatch):
+    _add_multiranger(cf, monkeypatch, {**FAR, "left": 200, "up": 2100})  # 0.20 m: at the limit
+    drone = cfmod.CrazyflieBackend()
+    follow_path(drone, [(0.0, 0.0, 0.5), (0.5, 0.0, 0.5)], monitor=FlightMonitor())
+    assert [g[0] for g in cf.sent("go_to")] == [0.5] and cf.names()[-2:] == ["land", "stop"]
+    drone.close()
