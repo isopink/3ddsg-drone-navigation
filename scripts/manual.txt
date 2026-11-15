@@ -10,8 +10,7 @@
  0. 준비 (처음 한 번)
 ------------------------------------------------------------------------------
  1) Python 3.12 설치
- 2) start_dashboard.bat 을 한 번 실행  ->  cf-env 가 만들어집니다.
-    이 창은 실험하는 동안 켜 두세요. 비행 결과가 2초 안에 나타납니다.
+ 2) setup.bat 을 한 번 실행  ->  cf-env 가 만들어집니다.
  3) 실제 드론을 쓸 때만:
 
       pip install cfclient
@@ -84,7 +83,6 @@
  check_sensors.py       날지 않고 센서 점검
  prop_test.py           프로펠러만 돌려 보기
  hover_test.py          호버링과 전진 비행 점검
- dashboard.py           비행 기록 웹 대시보드
  flight_report.py       비행 보고서 만들기
  replay_run.py          저장된 비행을 Rerun 으로 재생
  ifc_to_graph.py        IFC 건물 모델 한 층을 그래프 파일로 변환
