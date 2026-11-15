@@ -29,12 +29,6 @@ Say "go from A to C". The goal parser picks the two rooms (rules first, optional
 | 4 | Real graph (Neo4j) | **Blocked: needs graph export or schema** |
 | 5 | Dynamic objects, re-planning | Not started |
 
-<p align="center">
-  <img src="docs/media/sim_results.png" alt="Simulation results: room, L-shaped corridor, room; and room, stairwell, room one floor up. No wall contact." width="100%">
-  <br>
-  <sub>Simulation results · videos: <a href="docs/media/sim_corridor.mp4">corridor</a>, <a href="docs/media/sim_stairs.mp4">stairs</a></sub>
-</p>
-
 ## Tasks
 
 Open tasks are tracked in **[Issues](https://github.com/isopink/3ddsg-drone-navigation/issues)**. Each has a goal, the files it touches and a done criterion.
