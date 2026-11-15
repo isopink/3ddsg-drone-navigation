@@ -21,6 +21,13 @@ This repo is the part that **takes the graph and flies the drone**. Graph constr
 | 4 Real graph (Neo4j) | **Open: needs the graph export or schema** |
 | 5 Dynamic objects, re-planning | Not started |
 
+<p align="center">
+  <img src="docs/media/virtual_A_to_C_top.png" alt="Virtual rooms A to C, top view: planned route and simulated flight" width="49%">
+  <img src="docs/media/virtual_A_to_C_oblique.png" alt="Virtual rooms A to C, oblique view" width="49%">
+  <br>
+  <sub>Step 3 in simulation: three virtual rooms sized to the real flying space, "go from A to C". Red is the planned route, blue the simulated flight. Start is green, goal magenta, doors are green outlines.</sub>
+</p>
+
 ## Run it
 
 Windows, Python 3.12. Real flights need a Crazyflie 2.1 with Flow deck v2 and a Crazyradio PA (libusb driver via Zadig).
