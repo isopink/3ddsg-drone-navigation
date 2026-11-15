@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 590" width="1200" height="590" font-family="'Times New Roman', Times, 'Noto Serif', serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#222"/>
+    </marker>
+    <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#777"/>
+    </marker>
+    <style>
+      .panel { fill: #fafafa; stroke: #bbb; stroke-width: 1; }
+      .ptitle { font-size: 15px; font-weight: bold; fill: #111; }
+      .box { fill: #fff; stroke: #222; stroke-width: 1.2; }
+      .ext { fill: #fff; stroke: #777; stroke-width: 1.2; stroke-dasharray: 5 3; }
+      .llm { fill: #fdeee3; stroke: #c4622d; stroke-width: 1.4; }
+      .key { fill: #eef2f7; stroke: #222; stroke-width: 1.2; }
+      .t { font-size: 14px; fill: #111; text-anchor: middle; }
+      .tb { font-size: 14px; fill: #111; text-anchor: middle; font-weight: bold; }
+      .s { font-size: 11.5px; fill: #444; text-anchor: middle; }
+      .si { font-size: 11.5px; fill: #444; text-anchor: middle; font-style: italic; }
+      .lbl { font-size: 11px; fill: #333; font-style: italic; }
+      .ln { stroke: #222; stroke-width: 1.2; fill: none; marker-end: url(#ah); }
+      .lng { stroke: #777; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; marker-end: url(#ahg); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="590" fill="#fff"/>
+
+  <!-- ===================== (a) Inputs ===================== -->
+  <rect class="panel" x="15" y="15" width="225" height="530" rx="6"/>
+  <text class="ptitle" x="30" y="40">(a) Inputs</text>
+
+  <rect class="box" x="30" y="95" width="195" height="74" rx="4"/>
+  <text class="tb" x="127.5" y="120">Command</text>
+  <text class="si" x="127.5" y="140">“A방에서 C방으로 가줘”</text>
+  <text class="si" x="127.5" y="157">“go from A to C”</text>
+
+  <rect class="ext" x="30" y="345" width="195" height="100" rx="4"/>
+  <text class="tb" x="127.5" y="372">3D Dynamic</text>
+  <text class="tb" x="127.5" y="390">Scene Graph</text>
+  <text class="s" x="127.5" y="410">IFC spaces, doors, voxels</text>
+  <text class="s" x="127.5" y="427">(Neo4j, built outside this repo)</text>
+
+  <!-- ===================== (b) Goal parsing ===================== -->
+  <rect class="panel" x="265" y="15" width="300" height="250" rx="6"/>
+  <text class="ptitle" x="280" y="40">(b) Goal parsing</text>
+
+  <rect class="box" x="285" y="55" width="200" height="50" rx="4"/>
+  <text class="t" x="385" y="76">Rule parser</text>
+  <text class="s" x="385" y="94">from/to · 에서/으로 · →</text>
+
+  <rect class="llm" x="285" y="130" width="200" height="50" rx="4"/>
+  <text class="t" x="385" y="151">LLM fallback</text>
+  <text class="s" x="385" y="169">picks room ids only (DeepSeek)</text>
+
+  <rect class="box" x="285" y="205" width="200" height="46" rx="4"/>
+  <text class="t" x="385" y="225">Verify ids ∈ G</text>
+  <text class="s" x="385" y="241">exists · start ≠ goal</text>
+
+  <path class="ln" d="M385,105 L385,128"/>
+  <text class="lbl" x="392" y="121">failed / guessed</text>
+  <path class="ln" d="M385,180 L385,203"/>
+  <!-- explicit rule result bypasses the LLM -->
+  <path class="ln" d="M485,80 L520,80 L520,228 L487,228"/>
+  <text class="lbl" x="525" y="150" transform="rotate(90 525 150)" text-anchor="middle">explicit</text>
+
+  <!-- ===================== (c) Scene representation ===================== -->
+  <rect class="panel" x="265" y="285" width="300" height="260" rx="6"/>
+  <text class="ptitle" x="280" y="310">(c) Scene representation</text>
+
+  <rect class="box" x="285" y="325" width="260" height="50" rx="4"/>
+  <text class="t" x="415" y="346">GraphSource</text>
+  <text class="s" x="415" y="364">fake · exchange folder · Neo4j (stub)</text>
+
+  <rect class="key" x="285" y="400" width="260" height="58" rx="4"/>
+  <text class="tb" x="415" y="422">SceneGraph  G = (R, D, V)</text>
+  <text class="s" x="415" y="441">rooms R · doors D · voxels V ∈ {free, occ, unk}</text>
+
+  <rect class="box" x="285" y="483" width="260" height="46" rx="4"/>
+  <text class="t" x="415" y="503">Graph validation</text>
+  <text class="s" x="415" y="519">connectivity · doors passable at margin</text>
+
+  <path class="ln" d="M415,375 L415,398"/>
+  <path class="ln" d="M415,458 L415,481"/>
+
+  <!-- ===================== (d) Route planning ===================== -->
+  <rect class="panel" x="590" y="15" width="300" height="530" rx="6"/>
+  <text class="ptitle" x="605" y="40">(d) Route planning</text>
+
+  <rect class="box" x="610" y="60" width="260" height="56" rx="4"/>
+  <text class="t" x="740" y="82">Global planner</text>
+  <text class="s" x="740" y="101">shortest room sequence (room graph)</text>
+
+  <rect class="box" x="610" y="146" width="260" height="56" rx="4"/>
+  <text class="t" x="740" y="168">Keypoints</text>
+  <text class="s" x="740" y="187">start room → door centers → goal room</text>
+
+  <rect class="box" x="610" y="232" width="260" height="56" rx="4"/>
+  <text class="t" x="740" y="254">Obstacle inflation</text>
+  <text class="s" x="740" y="273">25 cm margin · unknown-voxel policy</text>
+
+  <rect class="box" x="610" y="318" width="260" height="70" rx="4"/>
+  <text class="t" x="740" y="340">Local planner (A*)</text>
+  <text class="s" x="740" y="359">26-connected voxels, no corner cutting</text>
+  <text class="s" x="740" y="376">+ line-of-sight shortcutting</text>
+
+  <rect class="key" x="610" y="418" width="260" height="56" rx="4"/>
+  <text class="tb" x="740" y="440">Waypoints  W</text>
+  <text class="s" x="740" y="459">collision check against G</text>
+
+  <path class="ln" d="M740,116 L740,144"/>
+  <path class="ln" d="M740,202 L740,230"/>
+  <path class="ln" d="M740,288 L740,316"/>
+  <path class="ln" d="M740,388 L740,416"/>
+
+  <!-- ===================== (e) Execution ===================== -->
+  <rect class="panel" x="915" y="15" width="270" height="530" rx="6"/>
+  <text class="ptitle" x="930" y="40">(e) Execution</text>
+
+  <rect class="box" x="930" y="60" width="240" height="56" rx="4"/>
+  <text class="t" x="1050" y="82">Pre-flight checks</text>
+  <text class="s" x="1050" y="101">battery · sim dry run (real drone)</text>
+
+  <rect class="box" x="930" y="146" width="240" height="56" rx="4"/>
+  <text class="t" x="1050" y="168">Executor</text>
+  <text class="s" x="1050" y="187">follow_path · v ≤ 0.3 m/s</text>
+
+  <rect class="box" x="930" y="232" width="240" height="40" rx="4"/>
+  <text class="t" x="1050" y="257">DroneBackend</text>
+  <rect class="box" x="930" y="290" width="114" height="52" rx="4"/>
+  <text class="t" x="987" y="311">Crazyflie 2.1</text>
+  <text class="s" x="987" y="329">+ Flow deck</text>
+  <rect class="box" x="1056" y="290" width="114" height="52" rx="4"/>
+  <text class="t" x="1113" y="311">MuJoCo</text>
+  <text class="s" x="1113" y="329">simulation</text>
+
+  <rect class="box" x="930" y="372" width="240" height="56" rx="4"/>
+  <text class="t" x="1050" y="394">Flight monitor</text>
+  <text class="s" x="1050" y="413">deviation &gt; 0.5 m → abort &amp; land</text>
+
+  <rect class="box" x="930" y="458" width="240" height="56" rx="4"/>
+  <text class="t" x="1050" y="480">Log &amp; comparison</text>
+  <text class="s" x="1050" y="499">trajectory CSV · planned vs. flown</text>
+
+  <path class="ln" d="M1050,116 L1050,144"/>
+  <path class="ln" d="M1050,202 L1050,230"/>
+  <path class="ln" d="M987,272 L987,288"/>
+  <path class="ln" d="M1113,272 L1113,288"/>
+  <path d="M987,342 L987,356 L1113,356 L1113,342" stroke="#222" stroke-width="1.2" fill="none"/>
+  <path class="ln" d="M1050,356 L1050,370"/>
+  <path class="ln" d="M1050,428 L1050,456"/>
+  <!-- per-waypoint feedback -->
+  <path class="lng" d="M1170,400 L1178,400 L1178,174 L1172,174"/>
+
+  <!-- ===================== cross-panel flows ===================== -->
+  <!-- command -> rule parser -->
+  <path class="ln" d="M225,132 L255,132 L255,80 L283,80"/>
+  <!-- 3DDSG -> GraphSource -->
+  <path class="ln" d="M225,395 L255,395 L255,350 L283,350"/>
+  <!-- room list to LLM / verify (G feeds goal parsing) -->
+  <path class="lng" d="M285,429 L272,429 L272,155 L283,155"/>
+  <text class="lbl" x="268" y="226" transform="rotate(-90 268 226)" text-anchor="middle" fill="#666">room list</text>
+  <!-- goal -> global planner -->
+  <path class="ln" d="M485,240 L575,240 L575,88 L608,88"/>
+  <text class="lbl" x="497" y="258">(start, goal)</text>
+  <!-- G -> planning -->
+  <path class="ln" d="M545,429 L580,429 L580,260 L608,260"/>
+  <text class="lbl" x="550" y="446">G</text>
+  <!-- waypoints -> execution -->
+  <path class="ln" d="M870,446 L900,446 L900,88 L928,88"/>
+  <text class="lbl" x="878" y="464">W</text>
+
+  <!-- legend -->
+  <g transform="translate(15,560)">
+    <rect class="box" x="0" y="0" width="16" height="11" rx="2"/>
+    <text class="lbl" x="22" y="10">module</text>
+    <rect class="key" x="80" y="0" width="16" height="11" rx="2"/>
+    <text class="lbl" x="102" y="10">core data</text>
+    <rect class="llm" x="172" y="0" width="16" height="11" rx="2"/>
+    <text class="lbl" x="194" y="10">LLM (optional)</text>
+    <rect class="ext" x="282" y="0" width="16" height="11" rx="2"/>
+    <text class="lbl" x="304" y="10">external</text>
+    <path class="lng" d="M362,6 L392,6"/>
+    <text class="lbl" x="400" y="10">auxiliary / feedback</text>
+  </g>
+</svg>

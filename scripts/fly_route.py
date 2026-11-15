@@ -23,6 +23,7 @@ from ddsg_nav.flight.compare import compare_to_plan, save_trajectory
 from ddsg_nav.flight.executor import follow_path
 from ddsg_nav.flight.monitor import FlightAbort, FlightMonitor
 from ddsg_nav.goal import GoalError, parse_goal
+from ddsg_nav.llm_goal import llm_from_env
 from ddsg_nav.graph.fake import build_row_graph
 from ddsg_nav.graph.model import Box
 from ddsg_nav.graph.transform import Transform
@@ -82,7 +83,8 @@ def main() -> int:
         print(v.format())
         return 1
     try:
-        goal = parse_goal(a.text, graph)
+        goal = parse_goal(a.text, graph, llm=llm_from_env())
+        print(f"goal: {goal.start} -> {goal.goal} (parsed by {goal.source})")
         plan = plan_route(graph, goal.start, goal.goal, a.height, a.margin)
     except (GoalError, NoPathError, KeyError) as e:
         print(f"cannot plan: {e}")

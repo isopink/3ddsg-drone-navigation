@@ -9,6 +9,7 @@ import argparse
 import sys
 
 from ddsg_nav.goal import GoalError, parse_goal
+from ddsg_nav.llm_goal import llm_from_env
 from ddsg_nav.graph.fake import build_fake_graph, build_large_graph
 from ddsg_nav.graph.io import GraphFormatError, load_graph, save_graph
 from ddsg_nav.planner.collision import check_path
@@ -40,7 +41,8 @@ def cmd_validate(a) -> int:
 def cmd_route(a) -> int:
     graph = load_graph(a.folder)
     try:
-        goal = parse_goal(a.text, graph, current_room=a.current_room)
+        goal = parse_goal(a.text, graph, current_room=a.current_room, llm=llm_from_env())
+        print(f"goal: {goal.start} -> {goal.goal} (parsed by {goal.source})")
         plan = plan_route(graph, goal.start, goal.goal, a.height, a.margin, a.policy)
     except (GoalError, NoRoomRouteError, NoPathError, KeyError) as e:
         print(f"cannot plan: {e}")
