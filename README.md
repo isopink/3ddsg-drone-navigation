@@ -12,7 +12,7 @@ This repo takes the graph and flies the drone. Building the graph and lab data a
 
 ## How it works
 
-Say "go from A to C". The goal parser picks the two rooms (rules first, optional LLM as fallback; it can only choose rooms that exist in the graph). The planner orders the rooms, then finds a voxel path with a 25 cm wall margin. The executor flies the waypoints in MuJoCo or on the real drone, checks after every waypoint, and lands if the drone leaves the plan.
+Say "go from A to C". The goal parser picks the two rooms (rules first, optional LLM as fallback; it can only choose rooms that exist in the graph). The planner orders the rooms, then finds an axis-aligned voxel path (no diagonal moves) with a 25 cm wall margin. The executor flies the waypoints in MuJoCo or on the real drone, checks after every waypoint, and lands if the drone leaves the plan.
 
 <p align="center">
   <img src="docs/media/system_overview.svg" alt="System overview: command, goal parsing, scene graph, route planning, execution" width="100%">

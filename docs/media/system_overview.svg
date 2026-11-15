@@ -99,8 +99,8 @@
 
   <rect class="box" x="610" y="318" width="260" height="70" rx="4"/>
   <text class="t" x="740" y="340">Local planner (A*)</text>
-  <text class="s" x="740" y="359">26-connected voxels, no corner cutting</text>
-  <text class="s" x="740" y="376">+ line-of-sight shortcutting</text>
+  <text class="s" x="740" y="359">6-connected moves (no diagonals)</text>
+  <text class="s" x="740" y="376">+ turn penalty · corners only</text>
 
   <rect class="key" x="610" y="418" width="260" height="56" rx="4"/>
   <text class="tb" x="740" y="440">Waypoints  W</text>
