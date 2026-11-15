@@ -5,7 +5,6 @@ steps in which the drone touched a wall/obstacle (the floor does not count).
 """
 from __future__ import annotations
 
-import time
 
 import numpy as np
 
@@ -30,9 +29,7 @@ class MuJoCoBackend(DroneBackend):
         start: Point,
         params: QuadrotorParams | None = None,
         record_dt: float = 0.02,
-        realtime: bool = False,
     ) -> None:
-        """`realtime` slows the simulation down to wall-clock speed (for the live view)."""
         try:
             import mujoco
         except ImportError as e:  # pragma: no cover
@@ -57,8 +54,6 @@ class MuJoCoBackend(DroneBackend):
         self._flying = False
         self.trajectory: list[tuple[float, float, float, float]] = []
         self.collisions = 0
-        self.realtime = realtime
-        self._wall0: float | None = None
         mujoco.mj_forward(self.model, self.data)
         self._record()
 
@@ -131,16 +126,6 @@ class MuJoCoBackend(DroneBackend):
         self._check_collision()
         if self._steps % self._record_every == 0:
             self._record()
-            if self.realtime:
-                self._sleep_to_wall_clock()
-
-    def _sleep_to_wall_clock(self) -> None:
-        now = time.monotonic()
-        if self._wall0 is None:
-            self._wall0 = now - self.time
-        ahead = self.time - (now - self._wall0)
-        if ahead > 0:
-            time.sleep(ahead)
 
     def _fly_to(self, target: np.ndarray, velocity: float) -> None:
         start = self.data.xpos[self._body].copy()
