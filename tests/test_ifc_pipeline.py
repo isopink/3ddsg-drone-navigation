@@ -206,10 +206,13 @@ def _cli(script, *args, cwd):
 def test_command_line(ifc, tmp_path):
     pytest.importorskip("mujoco")
     script = str(ROOT / "scripts" / "ifc_pipeline.py")
-    listing = _cli(script, ifc, cwd=tmp_path)
+    # the script prints the file path: fix the encoding so a non-ASCII folder cannot break the read
+    io = dict(capture_output=True, text=True, encoding="utf-8", cwd=tmp_path,
+              env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
+    listing = subprocess.run([sys.executable, script, ifc], **io)
     assert listing.returncode == 0 and STOREY in listing.stdout and "5 spaces" in listing.stdout
     assert not (tmp_path / "data").exists()  # listing writes nothing
-    done = _cli(script, ifc, "--storey", STOREY, cwd=tmp_path)
+    done = subprocess.run([sys.executable, script, ifc, "--storey", STOREY], **io)
     assert done.returncode == 0, done.stdout + done.stderr
     assert "wall contacts: 0" in done.stdout and "RESULT: PASS" in done.stdout
     assert (tmp_path / "data" / STOREY / "graph.json").is_file()  # default --out
