@@ -37,7 +37,7 @@ py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
 pip install -e ".[neo4j,viz,sim,live,dev]"
-pytest                      # 181 tests, about 2 minutes, no drone needed
+pytest                      # 177 tests, about 2 minutes, no drone needed
 
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
