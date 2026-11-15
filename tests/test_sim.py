@@ -113,6 +113,36 @@ def test_drone_stops_before_an_unmapped_box():
     assert x < UNMAPPED.min[0] - drone.params.radius and z < 0.1  # stopped short and landed
 
 
+MID_BOX = Box((1.4, 1.2, 0.0), (1.6, 1.8, 1.0))  # unmapped, in the middle of the segment below
+
+
+@pytest.mark.parametrize("spacing", [2.0, 0.5, 0.07])
+def test_stop_distance_does_not_depend_on_waypoint_spacing(spacing):
+    """A 2 m line through an unmapped box, as one segment or as many: same stop, 0 contacts."""
+    g = build_fake_graph()
+    n = round(2.0 / spacing)
+    path = [(0.5 + 2.0 * i / n, 1.5, 0.5) for i in range(n + 1)]
+    mon = FlightMonitor(path=path)
+    with MuJoCoBackend(g, (0.5, 1.5, 0.0), extra_solids=[MID_BOX]) as drone:
+        with pytest.raises(FlightAbort, match="to the front"):
+            follow_path(drone, path, velocity=0.3, monitor=mon)
+        x, _, z = drone.position()
+    assert drone.collisions == 0 and z < 0.1  # landed without touching the box
+    gap = MID_BOX.min[0] - x
+    assert 0.2 - 0.1 - 0.03 < gap < 0.2 + 0.03  # range limit 0.2 m, check step 0.1 m
+
+
+def test_checks_at_waypoints_only_miss_the_box_on_a_long_segment():
+    g = build_fake_graph()
+    path = [(0.5, 1.5, 0.5), (2.5, 1.5, 0.5)]
+    with MuJoCoBackend(g, (0.5, 1.5, 0.0), extra_solids=[MID_BOX]) as drone:
+        try:
+            follow_path(drone, path, velocity=0.3, monitor=FlightMonitor(path=path), check_step_m=None)
+        except Exception:
+            pass
+    assert drone.collided
+
+
 def test_without_the_range_check_the_drone_hits_the_box():
     g = build_fake_graph()
     path = [(0.5, 1.5, 0.5), (2.5, 1.5, 0.5)]
