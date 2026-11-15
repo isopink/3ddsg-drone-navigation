@@ -80,7 +80,7 @@ Optional LLM goal parsing: copy `.env.example` to `.env` and set `DDSG_LLM_API_K
 |---|---|
 | IFC | `python scripts\ifc_pipeline.py model.ifc --storey NAME` |
 | 3DDSG (Neo4j or exported folder) | fill in `Neo4jMapping` (`docs/graph_format.md`), then `python scripts\graph_pipeline.py --neo4j URI --floor NAME --save data\NAME` |
-| A graph folder | `python scripts\check_routes.py --graph data\NAME "from A to C" --png`, then `python scriptsly_route.py --backend sim --graph data\NAME "from A to C"` |
+| A graph folder | `python scripts\check_routes.py --graph data\NAME "from A to C" --png`, then `python scripts\fly_route.py --backend sim --graph data\NAME "from A to C"` |
 | Multi-ranger deck | `python scripts\check_sensors.py --watch`, then fly with `--check-step 0.1` |
 
 What to ask the 3DDSG builders for: `docs/3ddsg_request.md`. Each closed issue has a checklist for the day its data or hardware arrives.
