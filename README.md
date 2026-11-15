@@ -25,7 +25,7 @@ Two stages, in this order:
 1. **Same floor:** room → bent corridor → room.
 2. **Between floors:** room → corridor → floor change (stairwell) → room.
 
-Both already work in simulation on generated test buildings. The end point is a lab demo on the real drone.
+Both already work in simulation on generated test buildings. The end point is a lab demo on the real drone: stage 1 (M4) at the end of November 2026, in the building the 3DDSG describes.
 
 ## Roadmap
 
@@ -36,7 +36,7 @@ Done: setup, hover and forward flight on the real drone; goal parsing; route pla
 | M1 | Real flight in virtual rooms | Next. Needs a person to fly |
 | M2 | Real building graph (test IFC now, 3DDSG when it arrives) | Next |
 | M3 | Range-sensor obstacle stop (Multi-ranger deck) | Next. Simulation first |
-| M4 | Demo 1: same floor, real flight on the demo-site graph | After M1 and M2 |
+| M4 | Demo 1: same floor, real flight in the 3DDSG building | After M1 and M2. **Due end of November** |
 | M5 | Demo 2: between floors | After M4 |
 | M6 | Dynamic objects, re-planning | After M3 |
 
