@@ -67,15 +67,12 @@
  3. 전체 명령 목록   (앞에 python scripts\ 를 붙입니다)
 ------------------------------------------------------------------------------
  fly_route.py           경로 계획 후 비행 (시뮬레이션, 실기체)
- demo_sim.py            화면 없이 시뮬레이션만 실행
  check_sensors.py       날지 않고 센서 점검
  prop_test.py           프로펠러만 돌려 보기
  hover_test.py          호버링과 전진 비행 점검
  ifc_to_graph.py        IFC 건물 모델 한 층을 그래프 파일로 변환
  graph_tools.py         내보낸 그래프 검사 (validate <폴더>)
  check_routes.py        경로 충돌 검사와 Open3D 시각화
- render_sim_video.py    시뮬레이션 비행을 영상과 GIF 로 저장
- benchmark_planning.py  층 크기 그래프에서 계획 속도 측정
 
  옵션 전체:  python scripts\<이름>.py --help
 

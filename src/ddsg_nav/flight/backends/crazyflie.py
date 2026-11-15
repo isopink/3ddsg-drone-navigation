@@ -45,8 +45,6 @@ class CrazyflieBackend(DroneBackend):
         self._traj_log: LogConfig | None = None
         self._t0 = time.monotonic()  # time base of `trajectory` and `clock()`
         self.trajectory: list[tuple[float, float, float, float]] = []  # (t, x, y, z), graph frame
-        # (t, battery V, supervisor.info), from the same 20 Hz log block as the trajectory
-        self.telemetry: list[tuple[float, float, int]] = []
 
     # -- connection ---------------------------------------------------------
     def connect(self) -> None:
@@ -102,17 +100,12 @@ class CrazyflieBackend(DroneBackend):
         safety.check_ground_height(heights)
 
     def _start_trajectory_log(self) -> None:
-        """Record the position estimate, battery and drone state during the flight (async, 20 Hz).
-
-        One log block: 3 floats + float + uint16 = 18 bytes, within the 26-byte block limit.
-        """
+        """Record the position estimate during the flight (async, 20 Hz)."""
         assert self._scf is not None
         self.trajectory = []
-        self.telemetry = []
         lg = LogConfig(name="traj", period_in_ms=50)
-        for v in ("stateEstimate.x", "stateEstimate.y", "stateEstimate.z", "pm.vbat"):
+        for v in ("stateEstimate.x", "stateEstimate.y", "stateEstimate.z"):
             lg.add_variable(v, "float")
-        lg.add_variable("supervisor.info", "uint16_t")
 
         def on_data(_ts, data, _cfg):
             t = time.monotonic() - self._t0
@@ -120,7 +113,6 @@ class CrazyflieBackend(DroneBackend):
                 (data["stateEstimate.x"], data["stateEstimate.y"], data["stateEstimate.z"])
             )
             self.trajectory.append((t, x, y, z))
-            self.telemetry.append((t, float(data["pm.vbat"]), int(data["supervisor.info"])))
 
         lg.data_received_cb.add_callback(on_data)
         self._scf.cf.log.add_config(lg)

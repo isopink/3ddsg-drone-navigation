@@ -25,8 +25,6 @@ class DroneBackend(ABC):
     """Backends may also keep, while flying:
 
     trajectory  list of (t, x, y, z): position samples, graph frame
-    telemetry   list of (t, battery_v, supervisor_info): battery and drone state samples
-                (the real Crazyflie logs both at 20 Hz; the simulator has no telemetry)
 
     with t on the `clock()` time base.
     """

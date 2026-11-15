@@ -105,10 +105,7 @@ def test_check_ground_height():
         safety.check_ground_height([])
 
 
-TUMBLED = 1 << 5  # supervisor.info bit of isTumbled (flight/safety.py)
-
-
-def test_crazyflie_logs_battery_and_state_with_the_position(monkeypatch):
+def test_crazyflie_logs_the_position(monkeypatch):
     """No radio: a fake log block checks the variables, the block size and the callback."""
     pytest.importorskip("cflib")
     from ddsg_nav.flight.backends import crazyflie as cfmod
@@ -136,11 +133,8 @@ def test_crazyflie_logs_battery_and_state_with_the_position(monkeypatch):
     drone._start_trajectory_log()
     lg = drone._traj_log
     names = [n for n, _ in lg.vars]
-    assert {"pm.vbat", "supervisor.info", "stateEstimate.x"} <= set(names)
+    assert {"stateEstimate.x", "stateEstimate.y", "stateEstimate.z"} <= set(names)
     assert sum(sizes[t] for _, t in lg.vars) <= 26  # Crazyflie log block payload limit
-    lg.callbacks[0](0, {"stateEstimate.x": 0.5, "stateEstimate.y": 0.0, "stateEstimate.z": 0.4,
-                        "pm.vbat": 3.95, "supervisor.info": TUMBLED}, lg)
+    lg.callbacks[0](0, {"stateEstimate.x": 0.5, "stateEstimate.y": 0.0, "stateEstimate.z": 0.4}, lg)
     assert drone.trajectory[0][1:] == pytest.approx((1.5, 2.0, 0.4))
-    t, vbat, info = drone.telemetry[0]
-    assert t == drone.trajectory[0][0] and vbat == pytest.approx(3.95) and info == TUMBLED
     drone._scf = None  # nothing to close
