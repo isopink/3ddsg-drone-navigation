@@ -6,6 +6,7 @@ Run (drone on flat floor, >=2 m clear in front, Crazyradio plugged in):
     cf-env\\Scripts\\python hover_test.py [--uri radio://0/80/2M/E7E7E7E7E7]
 
 Add --live to print motor output and sensor values while it flies.
+--velocity sets the forward speed (default 0.2 m/s, max 0.3 m/s). Take-off and landing stay at 0.2 m/s.
 
 Safety: keep a hand near the drone / battery. Ctrl+C lands immediately.
 """
@@ -26,7 +27,8 @@ DEFAULT_URI = uri_helper.uri_from_env(default="radio://0/80/2M/E7E7E7E7E7")
 
 HOVER_HEIGHT = 0.4   # m  (Flow deck is reliable around 0.3-0.5 m)
 MOVE_DISTANCE = 1.0  # m
-VELOCITY = 0.2       # m/s (slow on purpose)
+VELOCITY = 0.2       # m/s, default forward speed (slow on purpose)
+MAX_VELOCITY = 0.3   # m/s, same safety cap as route flights (flight/executor.py)
 MIN_BATTERY_V = 3.7  # default: refuse to fly below this (change with --min-battery)
 BATTERY_FLOOR_V = 3.3  # never below this: the LiPo is empty and sags under 3 V in flight
 MIN_RECOMMENDED_HEIGHT = 0.2  # m, Flow deck v2 documented minimum
@@ -202,7 +204,7 @@ def check_height_sensor(scf: SyncCrazyflie, n: int = 10) -> None:
 
 
 def main(uri: str, height: float, distance: float, hover_time: float, live: bool = False,
-         min_battery: float = MIN_BATTERY_V) -> None:
+         min_battery: float = MIN_BATTERY_V, velocity: float = VELOCITY) -> None:
     if height < MIN_RECOMMENDED_HEIGHT:
         print(f"WARNING: {height} m is below the documented Flow deck v2 range "
               f"({MIN_RECOMMENDED_HEIGHT}-3.0 m). Height hold may be unreliable.")
@@ -248,8 +250,8 @@ def main(uri: str, height: float, distance: float, hover_time: float, live: bool
             print(f"Hovering at {height} m for {hover_time} s")
             time.sleep(hover_time)
             if distance > 0:
-                print(f"Forward {distance} m")
-                mc.forward(distance, velocity=VELOCITY)
+                print(f"Forward {distance} m at {velocity} m/s")
+                mc.forward(distance, velocity=velocity)
                 time.sleep(2)
             print("Landing...")
         time.sleep(0.5)
@@ -266,6 +268,8 @@ if __name__ == "__main__":
     ap.add_argument("--height", type=float, default=HOVER_HEIGHT, help="hover height in m")
     ap.add_argument("--distance", type=float, default=MOVE_DISTANCE,
                     help="forward distance in m (0 = hover only)")
+    ap.add_argument("--velocity", type=float, default=VELOCITY,
+                    help=f"forward speed in m/s (default {VELOCITY}, max {MAX_VELOCITY})")
     ap.add_argument("--hover-time", type=float, default=3.0, help="seconds to hover")
     ap.add_argument("--live", action="store_true",
                     help="print motor output (%% of max), height, position and battery 4x per second")
@@ -275,4 +279,6 @@ if __name__ == "__main__":
     a = ap.parse_args()
     if a.min_battery < BATTERY_FLOOR_V:
         ap.error(f"--min-battery below {BATTERY_FLOOR_V} V is not allowed: the battery is empty")
-    main(a.uri, a.height, a.distance, a.hover_time, a.live, a.min_battery)
+    if not 0 < a.velocity <= MAX_VELOCITY:
+        ap.error(f"--velocity must be above 0 and at most {MAX_VELOCITY} m/s")
+    main(a.uri, a.height, a.distance, a.hover_time, a.live, a.min_battery, a.velocity)
