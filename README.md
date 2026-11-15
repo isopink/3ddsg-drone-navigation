@@ -52,6 +52,8 @@ pytest                      # 212 tests, about 2 minutes, no drone needed
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
 
+**Speed.** `fly_route.py --velocity 0.2` sets the route speed in m/s. On the real drone, `hover_test.py --velocity 0.2` sets the forward speed of the hover test (take off, hover, 1 m forward, land). Both default to 0.2 m/s and are capped at 0.3 m/s.
+
 **Optional LLM for goal parsing.** Copy `.env.example` to `.env` and set `DDSG_LLM_API_KEY`. It uses DeepSeek by default; any OpenAI-compatible API works if you change `DDSG_LLM_BASE_URL` and `DDSG_LLM_MODEL`. Without a key, only the rules run. `.env` is never committed.
 
 ## Flight dashboards
