@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from ddsg_nav.flight import safety
@@ -56,6 +58,37 @@ def test_follow_path_lands_on_error():
     with pytest.raises(RuntimeError):
         follow_path(b, WAYPOINTS)
     assert b.calls[-1] == ("land",)
+
+
+def test_split_segment():
+    from ddsg_nav.flight.executor import split_segment
+
+    a, b = (0.0, 0.0, 0.5), (1.0, 0.0, 0.5)
+    pts = split_segment(a, b, 0.3)
+    assert [p[0] for p in pts] == pytest.approx([0.25, 0.5, 0.75, 1.0]) and pts[-1] is b
+    assert split_segment(a, b, 1.0) == [b] and split_segment(a, a, 0.1) == [a]
+    assert len(split_segment(a, b, 0.1)) == 10  # no extra step from rounding
+
+
+def test_follow_path_without_monitor_sends_the_waypoints_only():
+    b = FakeBackend()
+    follow_path(b, WAYPOINTS, velocity=0.2)
+    assert [c[1:4] for c in b.calls if c[0] == "go_to"] == WAYPOINTS
+
+
+def test_follow_path_with_monitor_flies_short_steps_through_every_waypoint():
+    from ddsg_nav.flight.monitor import FlightMonitor
+
+    b = FakeBackend()
+    reached = []
+    follow_path(b, WAYPOINTS, velocity=0.2, monitor=FlightMonitor(), on_waypoint=lambda i, wp: reached.append(i))
+    moves = [c[1:4] for c in b.calls if c[0] == "go_to"]
+    assert len(moves) == 1 + 10 + 10 and reached == [0, 1, 2]
+    assert all(wp in moves for wp in WAYPOINTS) and moves[-1] == WAYPOINTS[-1]
+    assert all(math.dist(p, q) <= 0.1 + 1e-9 for p, q in zip(moves, moves[1:]))
+    assert b.calls[-1] == ("land",)
+    with pytest.raises(ValueError):
+        follow_path(FakeBackend(), WAYPOINTS, monitor=FlightMonitor(), check_step_m=0)
 
 
 def test_follow_path_empty():

@@ -415,8 +415,8 @@ def test_monitor_lands_the_drone_near_an_obstacle(cf, monkeypatch):
 
     with pytest.raises(FlightAbort, match="0.15 m to the front"):
         follow_path(drone, wps, monitor=FlightMonitor(), on_waypoint=on_waypoint)
-    # waypoint 0 is the take-off point (no move); waypoint 2 was not flown
-    assert [g[0] for g in cf.sent("go_to")] == [0.5]
+    # waypoint 0 is the take-off point (no move); the check after the first 0.1 m step aborts
+    assert [g[0] for g in cf.sent("go_to")] == pytest.approx([0.1])
     assert cf.names()[-2:] == ["land", "stop"] and cf.blocks == []
     drone.close()
 
@@ -425,5 +425,5 @@ def test_monitor_ignores_far_and_empty_readings(cf, monkeypatch):
     _add_multiranger(cf, monkeypatch, {**FAR, "left": 200, "up": 2100})  # 0.20 m: at the limit
     drone = cfmod.CrazyflieBackend()
     follow_path(drone, [(0.0, 0.0, 0.5), (0.5, 0.0, 0.5)], monitor=FlightMonitor())
-    assert [g[0] for g in cf.sent("go_to")] == [0.5] and cf.names()[-2:] == ["land", "stop"]
+    assert cf.sent("go_to")[-1][0] == 0.5 and cf.names()[-2:] == ["land", "stop"]
     drone.close()
