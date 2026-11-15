@@ -1,9 +1,9 @@
-"""Step 0: Crazyflie 2.1 + Flow deck basic flight check.
+"""Crazyflie 2.1 + Flow deck basic flight check.
 
 Sequence: take off -> hover -> move forward 1 m -> hover -> land.
 
 Run (drone on flat floor, >=2 m clear in front, Crazyradio plugged in):
-    cf-env\\Scripts\\python step0_hover_test.py [--uri radio://0/80/2M/E7E7E7E7E7]
+    cf-env\\Scripts\\python hover_test.py [--uri radio://0/80/2M/E7E7E7E7E7]
 
 Add --live to print motor output and sensor values while it flies.
 

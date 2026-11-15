@@ -1,11 +1,11 @@
-"""Step 2: check routes for collisions and render them with Open3D.
+"""Check routes for collisions and render them with Open3D.
 
 Run from the repository root:
-    cf-env\\Scripts\\python scripts\\viz_routes.py              # collision table for all room pairs
-    cf-env\\Scripts\\python scripts\\viz_routes.py --screenshots # also save PNGs to docs/media
-    cf-env\\Scripts\\python scripts\\viz_routes.py --sim         # overlay a MuJoCo flight (blue)
-    cf-env\\Scripts\\python scripts\\viz_routes.py --show "go from A to C" --obstacle
-    cf-env\\Scripts\\python scripts\\viz_routes.py --screenshots --sim --corridor  # room, L-shaped hallway, room
+    cf-env\\Scripts\\python scripts\\check_routes.py              # collision table for all room pairs
+    cf-env\\Scripts\\python scripts\\check_routes.py --screenshots # also save PNGs to docs/media
+    cf-env\\Scripts\\python scripts\\check_routes.py --sim         # overlay a MuJoCo flight (blue)
+    cf-env\\Scripts\\python scripts\\check_routes.py --show "go from A to C" --obstacle
+    cf-env\\Scripts\\python scripts\\check_routes.py --screenshots --sim --corridor  # room, L-shaped hallway, room
 """
 import argparse
 import itertools

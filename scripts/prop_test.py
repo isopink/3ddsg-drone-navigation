@@ -1,4 +1,4 @@
-"""Step 0: propeller test (no take-off).
+"""Propeller test (no take-off).
 
 Triggers the firmware's built-in propeller test (param health.startPropTest):
 each motor spins briefly in turn at low power, then stops.
@@ -8,7 +8,7 @@ Before running:
   - Battery charged.
 
 Run:
-    cf-env\\Scripts\\python step0_prop_test.py [--uri radio://0/80/2M]
+    cf-env\\Scripts\\python prop_test.py [--uri radio://0/80/2M]
 """
 import argparse
 import time

@@ -99,10 +99,10 @@ It can contain lab graphs: share the report, not the folder.
 
 ## Where help is needed
 
-- **Step 4, Neo4j source** (`graph/neo4j_source.py`, a documented stub): produce a `SceneGraph` for one floor. The contract is in the file and in `docs/graph_format.md`. Until the schema is known, an export in that format works with everything here.
+- **Neo4j source** (`graph/neo4j_source.py`, a documented stub): produce a `SceneGraph` for one floor. The contract is in the file and in `docs/graph_format.md`. Until the schema is known, an export in that format works with everything here.
 - **Unobserved voxels**: the policy is one setting for the whole map. Real data may need it per element type (an unobserved wall vs an unobserved door).
-- **Step 5**: dynamic objects are not in the model yet.
-- **Real flights**: `backends/crazyflie.py` is **not flight-tested**; only `scripts/step0_hover_test.py` was flown.
+- **Dynamic objects**: not in the model yet.
+- **Real flights**: `backends/crazyflie.py` is **not flight-tested**; only `scripts/hover_test.py` was flown.
 
 ## Before flying the real drone
 
@@ -112,19 +112,11 @@ It can contain lab graphs: share the report, not the folder.
 - Charged battery (take-off needs 3.7 V). After any crash, check the battery, propellers and deck pins.
 - The simulator has no sensor model: it does **not** reproduce Flow deck drift or failures.
 
-## Working together
-
-Full rules (in Korean): **[CONTRIBUTING.md](CONTRIBUTING.md)**: roles, branch names, the PR flow.
-
-- Do not push to `main`. Make a branch (`feat/…`, `fix/…`, `docs/…`), open a Pull Request, and run `pytest` first. Seokmin merges all PRs.
-- **Never commit lab data** (graphs, IFC, point clouds). `data/` is ignored.
-- Keep `main` working: tests pass, scripts run from the repository root.
-
 ## Layout
 
 ```
 src/ddsg_nav/   graph/  goal.py  llm_goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/  report.py
-scripts/        fly_route.py  flight_report.py  replay_run.py  graph_tools.py  step0_hover_test.py  ...
+scripts/        fly_route.py  flight_report.py  replay_run.py  graph_tools.py  hover_test.py  ...
 tests/          run without a drone
 data/           local graphs, never committed
 runs/           flight records and reports, never committed

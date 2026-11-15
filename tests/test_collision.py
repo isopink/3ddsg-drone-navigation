@@ -66,7 +66,7 @@ def test_check_trajectory_array(graph):
     assert check_trajectory(graph, traj).ok
 
 
-# ---- many start/goal combinations (Step 2 done criterion: zero collisions) ----
+# ---- many start/goal combinations (done criterion: zero collisions) ----
 
 def test_goal_moves_when_room_center_is_blocked():
     g = build_fake_graph(obstacle=True)  # box in the middle of room B

@@ -1,4 +1,4 @@
-"""Step 3: plan a route through virtual rooms and fly it, in simulation or on the real drone.
+"""Plan a route through virtual rooms and fly it, in simulation or on the real drone.
 
 The virtual rooms and doors only exist in the map. Size them to the space you can really
 fly in, put the drone at the center of the start room with its nose along +x (or pass
@@ -16,7 +16,7 @@ Run from the repository root:
 Every run is saved to runs/<time>/ with a flight report (report.html): plan vs simulation
 vs real flight. Rebuild it with scripts/flight_report.py, replay it with scripts/replay_run.py.
 
-Fly in a bright room over a textured floor (Step 0 lesson), 30 cm to 1 m high.
+Fly in a bright room over a textured floor (hover-test lesson), 30 cm to 1 m high.
 Ctrl+C lands the drone.
 """
 import argparse

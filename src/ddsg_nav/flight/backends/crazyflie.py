@@ -1,7 +1,7 @@
-"""Real Crazyflie backend (cflib), with the pre-flight checks learned in Step 0.
+"""Real Crazyflie backend (cflib), with the pre-flight checks learned in the hover test.
 
-NOT yet flight-tested: written from the Step 0 script and the cflib API, but the
-`scripts/step0_hover_test.py` flow is the one validated on hardware so far.
+NOT yet flight-tested: written from the hover-test script and the cflib API, but the
+`scripts/hover_test.py` flow is the one validated on hardware so far.
 Re-test with `--height 0.3` in a bright room over a textured floor before relying on it.
 
 Coordinates: graph coordinates. `frame` says where the drone's estimator frame sits in
@@ -129,7 +129,7 @@ class CrazyflieBackend(DroneBackend):
 
     def _stop_trajectory_log(self) -> None:
         # the Crazyflie keeps log blocks until they are deleted; leftovers make the next
-        # connection print 'Error no LogEntry to handle id=N' (seen in the Step 0 flights)
+        # connection print 'Error no LogEntry to handle id=N' (seen in the hover-test flights)
         lg, self._traj_log = self._traj_log, None
         if lg is not None:
             try:

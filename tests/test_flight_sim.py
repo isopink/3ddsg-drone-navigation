@@ -1,4 +1,4 @@
-"""Step 3 preparation: virtual rooms, flight monitor, plan-vs-flown comparison."""
+"""Virtual rooms, flight monitor, plan-vs-flown comparison."""
 import math
 import os
 import subprocess
