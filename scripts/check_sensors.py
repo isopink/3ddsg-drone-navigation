@@ -7,6 +7,8 @@
 Ground check: Flow deck detected, height sensor alive and low, flow sensor sees the floor,
 battery, drone state (locked / crashed / tumbled). Same limits as the pre-flight checks
 (flight/safety.py).
+With a Multi-ranger deck the ground check and --watch also show the distance to the front,
+back, left, right and up in meters ("-" when nothing is in view).
 Shake test: the deck connection must survive vibration. Any 0 or error reading, or a jump
 of more than 30 cm in 50 ms while you move it by hand, means a loose deck or bad pins.
 """
@@ -30,11 +32,14 @@ MIN_SQUAL = 10  # flow quality on a textured floor in light is ~20-50
 ERROR_MM = 8000  # the height sensor reports 65535 (or similar) when it fails
 VARS = [("range.zrange", "uint16_t"), ("motion.squal", "uint8_t"),
         ("pm.vbat", "float"), ("supervisor.info", "uint16_t")]
+RANGE_DIRS = ("front", "back", "left", "right", "up")
+# 5 x uint16 = 10 bytes on top of the 9 above: still inside the 26-byte log block limit
+RANGE_VARS = [(f"range.{d}", "uint16_t") for d in RANGE_DIRS]
 
 
-def read(scf, seconds: float, period_ms: int):
+def read(scf, seconds: float, period_ms: int, variables=VARS):
     lg = LogConfig("check", period_ms)
-    for name, typ in VARS:
+    for name, typ in variables:
         lg.add_variable(name, typ)
     rows, n = [], max(1, int(seconds * 1000 / period_ms))
     with SyncLogger(scf, lg) as logger:
@@ -52,13 +57,34 @@ def deck_found(scf) -> bool:
         return False
 
 
+def multiranger_found(scf) -> bool:
+    try:
+        return int(scf.cf.param.get_value("deck.bcMultiranger")) == 1
+    except Exception:
+        return False
+
+
+def range_m(mm) -> float | None:
+    """Multi-ranger reading in meters; None when nothing is in view (the deck then reports 32767)."""
+    return None if mm >= ERROR_MM else mm / 1000.0
+
+
+def format_ranges(row) -> str:
+    parts = []
+    for d in RANGE_DIRS:
+        m = range_m(row[f"range.{d}"])
+        parts.append(f"{d} -" if m is None else f"{d} {m:.2f} m")
+    return "   ".join(parts)
+
+
 def bad_state(info: int) -> list[str]:
     flags = safety.decode_supervisor(int(info))
     return [k for k in ("isLocked", "isCrashed", "isTumbled") if flags.get(k)]
 
 
 def ground_check(scf) -> int:
-    rows = read(scf, 3.0, 100)
+    ranger = multiranger_found(scf)
+    rows = read(scf, 3.0, 100, VARS + RANGE_VARS if ranger else VARS)
     z = [r["range.zrange"] for r in rows]
     q = [r["motion.squal"] for r in rows]
     vbat = rows[-1]["pm.vbat"]
@@ -87,6 +113,10 @@ def ground_check(scf) -> int:
     print(f"Flow deck   : {'detected' if deck else 'NOT detected'}")
     print(f"Height      : {min(z)}-{max(z)} mm   {z}")
     print(f"Flow quality: {min(q)}-{max(q)}")
+    if ranger:
+        print(f"Multi-ranger: detected   {format_ranges(rows[-1])}")
+    else:
+        print("Multi-ranger: not detected (no range readings)")
     print(f"Battery     : {vbat:.2f} V")
     print(f"Drone state : {', '.join(state) if state else 'ok'}")
     print()
@@ -123,16 +153,20 @@ def shake_test(scf, seconds: float) -> int:
 
 
 def watch(scf) -> int:
+    ranger = multiranger_found(scf)
     print("Live values, Ctrl+C to stop")
+    if not ranger:
+        print("Multi-ranger deck not detected: no range readings")
     lg = LogConfig("watch", 200)
-    for name, typ in VARS:
+    for name, typ in (VARS + RANGE_VARS if ranger else VARS):
         lg.add_variable(name, typ)
     try:
         with SyncLogger(scf, lg) as logger:
             for _, d, _ in logger:
                 state = bad_state(d["supervisor.info"])
                 print(f"height {d['range.zrange']:>5} mm   flow {d['motion.squal']:>3}   "
-                      f"battery {d['pm.vbat']:.2f} V   state {','.join(state) or 'ok'}")
+                      f"battery {d['pm.vbat']:.2f} V   state {','.join(state) or 'ok'}"
+                      + (f"   {format_ranges(d)}" if ranger else ""))
     except KeyboardInterrupt:
         pass
     return 0
