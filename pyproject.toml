@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 neo4j = ["neo4j"]
+ifc = ["ifcopenshell"]  # scripts/ifc_to_graph.py
 viz = ["open3d"]
 sim = ["mujoco"]
 live = ["rerun-sdk"]
