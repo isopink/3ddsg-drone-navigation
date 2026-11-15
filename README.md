@@ -18,6 +18,15 @@ Say "go from A to C". The goal parser picks the two rooms (rules first, optional
   <img src="docs/media/system_overview.svg" alt="System overview: command, goal parsing, scene graph, route planning, execution" width="100%">
 </p>
 
+## Goals
+
+Two stages, in this order:
+
+1. **Same floor:** room → bent corridor → room.
+2. **Between floors:** room → corridor → floor change (stairwell) → room.
+
+Both already work in simulation on generated test buildings. Still open: flying them on the real drone, and on the real building graph (Steps 3 and 4 below).
+
 ## Status
 
 | Step | | |
