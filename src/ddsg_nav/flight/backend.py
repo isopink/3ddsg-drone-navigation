@@ -28,7 +28,7 @@ class DroneBackend(ABC):
     telemetry   list of (t, battery_v, supervisor_info): battery and drone state samples
                 (the real Crazyflie logs both at 20 Hz; the simulator has no telemetry)
 
-    with t on the `clock()` time base. The live view and the flight records read them.
+    with t on the `clock()` time base.
     """
 
     @abstractmethod

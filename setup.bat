@@ -20,7 +20,7 @@ if not exist "cf-env\Scripts\python.exe" (
     exit /b 1
 )
 "cf-env\Scripts\python.exe" -m pip install --upgrade pip
-"cf-env\Scripts\python.exe" -m pip install -e ".[sim,live]"
+"cf-env\Scripts\python.exe" -m pip install -e ".[sim]"
 if errorlevel 1 (
     echo.
     echo Installing the packages failed. Check the internet connection and try again.
