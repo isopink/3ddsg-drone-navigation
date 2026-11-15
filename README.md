@@ -25,22 +25,26 @@ Two stages, in this order:
 1. **Same floor:** room → bent corridor → room.
 2. **Between floors:** room → corridor → floor change (stairwell) → room.
 
-Both already work in simulation on generated test buildings. Still open: flying them on the real drone, and on the real building graph (Steps 3 and 4 below).
+Both already work in simulation on generated test buildings. The end point is a lab demo on the real drone.
 
-## Status
+## Roadmap
 
-| Step | | |
+Done: setup, hover and forward flight on the real drone; goal parsing; route planning; collision check; simulated flight (corridor and stairwell).
+
+| Milestone | | Status |
 |---|---|---|
-| 0 | Setup, hover, forward flight | Done on the real drone |
-| 1 | Goal parsing, route planning | Done |
-| 2 | Collision check, visualization | Done |
-| 3 | Virtual-room flight | Simulation done. **Real flight pending** |
-| 4 | Real graph (Neo4j) | **Blocked: needs graph export or schema** |
-| 5 | Dynamic objects, re-planning | Not started |
+| M1 | Real flight in virtual rooms | Next. Needs a person to fly |
+| M2 | Real building graph (test IFC now, 3DDSG when it arrives) | Next |
+| M3 | Range-sensor obstacle stop (Multi-ranger deck) | Next. Simulation first |
+| M4 | Demo 1: same floor, real flight on the demo-site graph | After M1 and M2 |
+| M5 | Demo 2: between floors | After M4 |
+| M6 | Dynamic objects, re-planning | After M3 |
+
+M1, M2 and M3 touch different files and run in parallel.
 
 ## Tasks
 
-Open tasks are tracked in **[Issues](https://github.com/isopink/3ddsg-drone-navigation/issues)**. Each has a goal, the files it touches and a done criterion.
+Open tasks are tracked in **[Issues](https://github.com/isopink/3ddsg-drone-navigation/issues)**, grouped by [milestone](https://github.com/isopink/3ddsg-drone-navigation/milestones). Each has a goal, the files it owns and a done criterion. One issue, one branch, one pull request.
 
 ## Quick start
 
