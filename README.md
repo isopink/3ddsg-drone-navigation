@@ -21,6 +21,13 @@ This repo is the part that **takes the graph and flies the drone**. Graph constr
 | 4 Real graph (Neo4j) | **Open: needs the graph export or schema** |
 | 5 Dynamic objects, re-planning | Not started |
 
+<p align="center">
+  <img src="docs/media/virtual_A_to_C_top.png" alt="Virtual rooms A to C, top view: planned route and simulated flight" width="49%">
+  <img src="docs/media/virtual_A_to_C_oblique.png" alt="Virtual rooms A to C, oblique view" width="49%">
+  <br>
+  <sub>Step 3 in simulation: three virtual rooms sized to the real flying space, "go from A to C". Red is the planned route, blue the simulated flight. Start is green, goal magenta, doors are green outlines.</sub>
+</p>
+
 ## Run it
 
 Windows, Python 3.12. Real flights need a Crazyflie 2.1 with Flow deck v2 and a Crazyradio PA (libusb driver via Zadig).
@@ -30,13 +37,22 @@ py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
 pip install -e ".[neo4j,viz,sim,dev]"
-pytest                      # 147 tests, about 2 minutes, no drone needed
+pytest                      # 167 tests, about 2 minutes, no drone needed
 
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
 
+**Optional LLM for goal parsing.** Copy `.env.example` to `.env` and set `DDSG_LLM_API_KEY`. It uses DeepSeek by default; any OpenAI-compatible API works if you change `DDSG_LLM_BASE_URL` and `DDSG_LLM_MODEL`. Without a key, only the rules run. `.env` is never committed.
+
 ## How it fits together
 
+<p align="center">
+  <img src="docs/media/system_overview.svg" alt="System overview: inputs, goal parsing, scene representation, route planning, execution" width="100%">
+</p>
+
+**Figure 1.** System overview. A command (a) becomes a start and goal room (b): the rule parser runs first, and the optional LLM is asked only when the rules fail or had to guess. It can only pick rooms that exist in the scene graph. The scene graph (c) comes from the 3DDSG, which is built outside this repo. Route planning (d) finds a room sequence, then a collision-free voxel path with a 25 cm margin. Execution (e) flies the waypoints on the real drone or in MuJoCo, checks after every waypoint and lands if the drone drifts off the plan.
+
+- **Goal parsing** (`goal.py`, `llm_goal.py`): rules for `from A to C`, `A방에서 C방으로`, `A -> C`. With an API key set, phrases the rules cannot resolve ("회의실 옆 방으로", "에이방에서 씨방으로") go to an LLM, which only picks room ids. The answer is checked against the graph, and route planning never depends on it. The scripts print which parser was used.
 - **`SceneGraph`** (`graph/model.py`): rooms, doors and a voxel map (free / occupied / unobserved). Everything downstream uses only this. A graph comes from a `GraphSource`: the fake graph, or a folder in the exchange format ([docs/graph_format.md](docs/graph_format.md)).
 - **Planning** (`planner/`): room sequence over the room graph, then A* on the voxels door to door, with a 25 cm safety margin. Unobserved voxels count as obstacles by default (`planner/policy.py`).
 - **Flight** (`flight/`): `follow_path` flies a path through a **`DroneBackend`**: the real Crazyflie (`backends/crazyflie.py`) or MuJoCo (`backends/mujoco_backend.py`). Speed is capped at 0.3 m/s and the drone always lands.
@@ -66,7 +82,7 @@ cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2
 ## Layout
 
 ```
-src/ddsg_nav/   graph/  goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/
+src/ddsg_nav/   graph/  goal.py  llm_goal.py  validate.py  planner/  sim/  flight/ (backends/)  viz/
 scripts/        fly_route.py  graph_tools.py  step0_hover_test.py  step0_prop_test.py  ...
 tests/          run without a drone
 data/           local graphs, never committed

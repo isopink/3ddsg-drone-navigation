@@ -1,9 +1,13 @@
 """Goal parsing: "go from room A to room C" -> start/goal room ids.
 
-Rule-based for now (room ids/names only). Natural language / LLM comes later.
-Supported forms (case-insensitive for names):
+Rules first (room ids/names only), with an optional LLM fallback (see llm_goal.py).
+Supported rule forms (case-insensitive for names):
     "go from A to C", "from Room A to Room C", "A -> C", "A→C",
     "A방에서 C방으로", "A방부터 C방까지", "C방으로 가줘" (needs current_room)
+
+With `llm=` the LLM is asked when the rules fail, or when they only guessed (no
+from/to, 에서/으로 or arrow marker), e.g. "회의실 옆 방으로 가줘". The LLM can only pick
+rooms that exist in the graph. If it fails, a confident-enough rule result is still used.
 """
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ import re
 from dataclasses import dataclass
 
 from .graph.model import SceneGraph
+from .llm_goal import ChatFn, LLMError, ask_llm
 
 
 class GoalError(ValueError):
@@ -21,6 +26,7 @@ class GoalError(ValueError):
 class Goal:
     start: str  # room id
     goal: str  # room id
+    source: str = "rules"  # "rules" or "llm"
 
 
 @dataclass(frozen=True)
@@ -48,7 +54,10 @@ def _find_mentions(text: str, graph: SceneGraph) -> list[_Mention]:
     return kept
 
 
-def parse_goal(text: str, graph: SceneGraph, current_room: str | None = None) -> Goal:
+def _parse_rules(
+    text: str, graph: SceneGraph, current_room: str | None
+) -> tuple[str | None, str | None, bool]:
+    """(start, goal, explicit). `explicit` is False when only the fallbacks were used."""
     mentions = _find_mentions(text, graph)
     if not mentions:
         raise GoalError(f"no known room in {text!r}")
@@ -87,6 +96,8 @@ def parse_goal(text: str, graph: SceneGraph, current_room: str | None = None) ->
             if before and after:
                 start, goal = before[-1].room_id, after[0].room_id
 
+    explicit = goal is not None
+
     # fallbacks
     if start is None and goal is None:
         if len(mentions) >= 2:
@@ -97,9 +108,43 @@ def parse_goal(text: str, graph: SceneGraph, current_room: str | None = None) ->
         start = graph.find_room(current_room).id
     elif goal is None:
         raise GoalError(f"no goal room in {text!r}")
+    return start, goal, explicit
 
+
+def _finish(start: str | None, goal: str | None, text: str, source: str) -> Goal:
     if start is None or goal is None:
         raise GoalError(f"could not find both start and goal in {text!r} (pass current_room?)")
     if start == goal:
         raise GoalError(f"start and goal are the same room ({start})")
-    return Goal(start=start, goal=goal)
+    return Goal(start=start, goal=goal, source=source)
+
+
+def parse_goal(
+    text: str,
+    graph: SceneGraph,
+    current_room: str | None = None,
+    llm: ChatFn | None = None,
+) -> Goal:
+    """Turn a command into start/goal room ids. `llm` (e.g. llm_goal.llm_from_env())
+    is an optional fallback; without it only the rules run."""
+    rule_goal: Goal | None = None
+    rule_error: GoalError | None = None
+    try:
+        start, goal, explicit = _parse_rules(text, graph, current_room)
+        rule_goal = _finish(start, goal, text, "rules")
+        if explicit or llm is None:
+            return rule_goal
+    except GoalError as e:
+        if llm is None:
+            raise
+        rule_error = e
+
+    try:
+        start, goal = ask_llm(text, graph, llm, current_room)
+    except LLMError as e:
+        if rule_goal is not None:
+            return rule_goal  # the rules' guess beats nothing
+        raise GoalError(f"{rule_error}; LLM fallback failed: {e}") from e
+    if start is None and current_room is not None:
+        start = graph.find_room(current_room).id
+    return _finish(start, goal, text, "llm")
