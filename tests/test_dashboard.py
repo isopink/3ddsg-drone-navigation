@@ -363,3 +363,62 @@ def test_crazyflie_logs_battery_and_state_with_the_position(monkeypatch):
     t, vbat, info = drone.telemetry[0]
     assert t == drone.trajectory[0][0] and vbat == pytest.approx(3.95) and info == TUMBLED
     drone._scf = None  # nothing to close
+
+
+# ---- runs dashboard (scripts/dashboard.py) -----------------------------------
+
+def _dashboard():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("dashboard", ROOT / "scripts" / "dashboard.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_dashboard_lists_runs_and_skips_unfinished_ones(tmp_path):
+    dash = _dashboard()
+    make_run(tmp_path, drift=0.1, aborted="battery low")
+    (tmp_path / "half_written").mkdir()
+    (tmp_path / "half_written" / "run.json").write_text("{\"format\": ", encoding="utf-8")
+    (tmp_path / "not a run").mkdir()
+    runs = dash.list_runs(tmp_path)
+    assert [r["name"] for r in runs] == ["run"]
+    (sim, real) = runs[0]["flights"]
+    assert sim["aborted"] is None and real["aborted"] == "battery low"
+    assert real["max_deviation_m"] == pytest.approx(0.1, abs=1e-6) and runs[0]["rooms"] == ["A", "B"]
+    assert dash.list_runs(tmp_path / "missing") == []
+
+
+def test_dashboard_http(tmp_path):
+    import threading
+    import urllib.error
+    import urllib.request
+
+    dash = _dashboard()
+    folder = make_run(tmp_path)
+    server = dash.serve(tmp_path, 8970)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        page = urllib.request.urlopen(base + "/").read().decode("utf-8")
+        assert "<title>Flight runs</title>" in page
+        data = json.loads(urllib.request.urlopen(base + "/api/runs").read())
+        assert [r["name"] for r in data["runs"]] == ["run"]
+        # the report is built on demand and rebuilt when the run is newer
+        assert not (folder / "report.html").exists()
+        html = urllib.request.urlopen(base + "/run/run/report").read().decode("utf-8")
+        assert "Flight report" in html and (folder / "report.html").is_file()
+        for bad in ("/run/..%2F..%2Fsecret/report", "/run/nope/report", "/elsewhere"):
+            with pytest.raises(urllib.error.HTTPError) as e:
+                urllib.request.urlopen(base + bad)
+            assert e.value.code == 404
+        # starting the viewer needs the dashboard's own header and origin
+        for headers in ({}, {"X-Dashboard": "1", "Origin": "http://evil.example"}):
+            req = urllib.request.Request(base + "/api/rerun/run", method="POST", headers=headers)
+            with pytest.raises(urllib.error.HTTPError) as e:
+                urllib.request.urlopen(req)
+            assert e.value.code == 403
+    finally:
+        server.shutdown()
+        server.server_close()

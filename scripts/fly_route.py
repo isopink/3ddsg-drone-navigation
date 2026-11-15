@@ -11,7 +11,7 @@ Run from the repository root:
     cf-env\\Scripts\\python scripts\\fly_route.py --backend crazyflie --rooms 2 2 --depth 2 "A -> B"
 
     # watch it live in Rerun (the simulation then runs at wall-clock speed)
-    cf-env\\Scripts\\python scripts\\fly_route.py --backend sim --live "go from A to C"
+    cf-env\\Scripts\\python scripts\\fly_route.py --backend sim --live --rooms 2 2 2 --depth 2 "go from A to C"
 
 Every run is saved to runs/<time>/ with a flight report (report.html): plan vs simulation
 vs real flight. Rebuild it with scripts/flight_report.py, replay it with scripts/replay_run.py.

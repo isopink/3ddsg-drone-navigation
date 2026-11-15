@@ -28,16 +28,27 @@ This repo is the part that **takes the graph and flies the drone**. Graph constr
   <sub>Step 3 in simulation: three virtual rooms sized to the real flying space, "go from A to C". Red is the planned route, blue the simulated flight. Start is green, goal magenta, doors are green outlines.</sub>
 </p>
 
+## Quick start for experiments
+
+No setup by hand: get the repository (`git clone`, or **Code → Download ZIP** on GitHub and unzip), then double-click:
+
+1. **`start_dashboard.bat`**: the first time it installs Python packages into `cf-env` (a few minutes, needs [Python 3.12](https://www.python.org/downloads/) and internet). Then it opens the **runs dashboard** in the browser. Keep it open.
+2. **`experiment_terminal.bat`**: a terminal with everything ready. It prints the commands to fly in simulation, with the live view, or on the real drone.
+
+Each flight shows up in the dashboard within two seconds and its report opens by itself. **Open in Rerun** replays it in 3D.
+The dashboard only shows results: flights are always started from the terminal.
+
 ## Run it
 
 Windows, Python 3.12. Real flights need a Crazyflie 2.1 with Flow deck v2 and a Crazyradio PA (libusb driver via Zadig).
+For the real drone, also run `pip install cfclient` in the experiment terminal.
 
 ```
 py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
 pip install -e ".[neo4j,viz,sim,live,dev]"
-pytest                      # 183 tests, about 2 minutes, no drone needed
+pytest                      # 185 tests, about 2 minutes, no drone needed
 
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
@@ -62,7 +73,8 @@ Every `fly_route.py` run is saved to `runs/<time>/` (git-ignored) with a **fligh
   The simulation then runs at wall-clock speed. The stream is also saved as `runs/<time>/flight.rrd`.
 
 ```
-cf-env\Scripts\python scripts\fly_route.py --backend sim --live "go from A to C"
+cf-env\Scripts\python scripts\dashboard.py                           # runs dashboard (start_dashboard.bat)
+cf-env\Scripts\python scripts\fly_route.py --backend sim --live --rooms 2 2 2 --depth 2 "go from A to C"
 cf-env\Scripts\python scripts\flight_report.py runs\<time> --open    # rebuild and open a report
 cf-env\Scripts\python scripts\flight_report.py runs --all            # every run
 cf-env\Scripts\python scripts\replay_run.py runs\<time>              # replay a run in Rerun
