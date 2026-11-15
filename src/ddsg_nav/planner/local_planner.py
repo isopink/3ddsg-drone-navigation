@@ -17,21 +17,58 @@ class NoPathError(RuntimeError):
     """No collision-free path exists between the two points."""
 
 
-def inflate(blocked: np.ndarray, radius_voxels: int) -> np.ndarray:
-    """Dilate a boolean mask by a sphere of `radius_voxels`."""
-    if radius_voxels <= 0:
-        return blocked.copy()
+def _dilate(blocked: np.ndarray, offsets) -> np.ndarray:
     out = blocked.copy()
-    r = radius_voxels
-    for dx, dy, dz in itertools.product(range(-r, r + 1), repeat=3):
-        if dx * dx + dy * dy + dz * dz > r * r or (dx, dy, dz) == (0, 0, 0):
-            continue
+    for dx, dy, dz in offsets:
         dst, src = [], []
         for d, n in zip((dx, dy, dz), blocked.shape):
             dst.append(slice(max(0, d), n + min(0, d)))
             src.append(slice(max(0, -d), n - max(0, d)))
         out[tuple(dst)] |= blocked[tuple(src)]
     return out
+
+
+def inflate(blocked: np.ndarray, radius_voxels: int) -> np.ndarray:
+    """Dilate a boolean mask by a sphere of `radius_voxels` (center-to-center distance)."""
+    if radius_voxels <= 0:
+        return blocked.copy()
+    r = radius_voxels
+    return _dilate(
+        blocked,
+        [
+            d
+            for d in itertools.product(range(-r, r + 1), repeat=3)
+            if d != (0, 0, 0) and d[0] * d[0] + d[1] * d[1] + d[2] * d[2] <= r * r
+        ],
+    )
+
+
+def margin_offsets(inflation_m: float, resolution: float) -> list[tuple[int, int, int]]:
+    """Voxel offsets whose center is closer than `inflation_m` to the surface of an
+    obstacle voxel at the origin.
+
+    The distance from a voxel center at offset d to the obstacle voxel's cube is
+    resolution * |max(|d| - 0.5, 0)| per axis. Along an axis this gives the same radius as
+    margin_voxels(); around a convex corner (a wall end, a door frame) it also blocks the
+    diagonal voxels that a center-to-center sphere misses, where the margin would
+    otherwise shrink to about 0.16 m for a 0.25 m margin at 0.1 m voxels.
+    """
+    r = math.ceil(inflation_m / resolution + 0.5)
+    limit = (inflation_m / resolution) ** 2 - 1e-9
+    out = []
+    for d in itertools.product(range(-r, r + 1), repeat=3):
+        if d == (0, 0, 0):
+            continue
+        if sum(max(abs(c) - 0.5, 0.0) ** 2 for c in d) < limit:
+            out.append(d)
+    return out
+
+
+def inflate_by_distance(blocked: np.ndarray, inflation_m: float, resolution: float) -> np.ndarray:
+    """Block every voxel whose center is closer than `inflation_m` to an obstacle surface."""
+    if inflation_m <= 0:
+        return blocked.copy()
+    return _dilate(blocked, margin_offsets(inflation_m, resolution))
 
 
 def margin_voxels(inflation_m: float, resolution: float) -> int:
@@ -52,7 +89,7 @@ def blocked_mask(
     blocked = grid.states == int(VoxelState.OCCUPIED)
     if unknown_is_obstacle:
         blocked |= grid.states == int(VoxelState.UNKNOWN)
-    return inflate(blocked, margin_voxels(inflation_m, grid.resolution))
+    return inflate_by_distance(blocked, inflation_m, grid.resolution)
 
 
 def _intermediate_cells(d: tuple[int, int, int]) -> list[tuple[int, int, int]]:
@@ -110,14 +147,17 @@ def _astar(blocked: np.ndarray, start: tuple, goal: tuple) -> list[tuple]:
 
 
 def _segment_free(grid: VoxelGrid, blocked: np.ndarray, a: Point, b: Point) -> bool:
-    n = max(1, math.ceil(math.dist(a, b) / (grid.resolution / 2)))
-    for i in range(n + 1):
-        t = i / n
-        p = tuple(x + (y - x) * t for x, y in zip(a, b))
-        idx = grid.index(p)  # type: ignore[arg-type]
-        if not grid.in_bounds(idx) or blocked[idx]:
-            return False
-    return True
+    """True if the straight segment a-b only passes through free voxels. Sampled every
+    1/8 voxel (vectorized), so it cannot skip the corner of a blocked voxel by more than
+    that."""
+    n = max(1, math.ceil(math.dist(a, b) / (grid.resolution / 8)))
+    t = np.linspace(0.0, 1.0, n + 1)[:, None]
+    pts = np.asarray(a, dtype=float) + (np.asarray(b, dtype=float) - np.asarray(a, dtype=float)) * t
+    idx = np.floor((pts - np.asarray(grid.origin)) / grid.resolution + 1e-9).astype(int)
+    shape = np.asarray(blocked.shape)
+    if (idx < 0).any() or (idx >= shape).any():
+        return False
+    return not blocked[idx[:, 0], idx[:, 1], idx[:, 2]].any()
 
 
 def _simplify(grid: VoxelGrid, blocked: np.ndarray, pts: list[Point]) -> list[Point]:

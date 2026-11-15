@@ -14,7 +14,7 @@ from enum import Enum
 import numpy as np
 
 from ..graph.model import SceneGraph, VoxelState
-from .local_planner import inflate, margin_voxels
+from .local_planner import inflate_by_distance
 
 
 class UnknownPolicy(str, Enum):
@@ -55,4 +55,4 @@ def blocked_mask(
 ) -> np.ndarray:
     """Obstacles inflated by the safety margin: the voxels the drone center must avoid."""
     raw = raw_obstacles(graph, policy)
-    return inflate(raw, margin_voxels(inflation_m, graph.voxels.resolution))
+    return inflate_by_distance(raw, inflation_m, graph.voxels.resolution)
