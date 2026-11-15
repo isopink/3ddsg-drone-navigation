@@ -171,11 +171,8 @@ def check_height_sensor(scf: SyncCrazyflie, n: int = 10) -> None:
     if max(vals) > MAX_GROUND_ZRANGE_MM:
         raise SystemExit(f"Height sensor reads {max(vals)} mm on the ground (expected "
                          f"< {MAX_GROUND_ZRANGE_MM}). Sensor blocked/faulty. Not taking off.")
-    # A steady small value is fine (close to the floor the sensor repeats e.g. 4 mm);
-    # a dead sensor reads 0 every time (or an error value, caught above).
-    if all(v == 0 for v in vals):
-        raise SystemExit("Height sensor reads 0 mm every time: the Flow deck sensor did not start. "
-                         "Power-cycle the drone (battery out), check the deck pins. Not taking off.")
+    if len(set(vals)) == 1:
+        raise SystemExit(f"Height sensor value frozen at {vals[0]} mm. Not taking off.")
 
 
 def main(uri: str, height: float, distance: float, hover_time: float) -> None:
