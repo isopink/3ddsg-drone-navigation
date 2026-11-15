@@ -116,6 +116,17 @@ def build_geometries(
             geoms.append(unknown)
 
     for room in graph.rooms.values():  # floor outline of each room
+        if room.polygon:  # e.g. an L-shaped hallway: draw its real footprint, not its bounding box
+            o3d = _o3d()
+            pts = [(x, y, 0.01) for x, y in room.polygon]
+            n = len(pts)
+            ls = o3d.geometry.LineSet(
+                points=o3d.utility.Vector3dVector(pts),
+                lines=o3d.utility.Vector2iVector([(i, (i + 1) % n) for i in range(n)]),
+            )
+            ls.paint_uniform_color(ROOM_BLUE)
+            geoms.append(ls)
+            continue
         lo, hi = room.bounds.min, room.bounds.max
         geoms.append(_box_outline(Box((lo[0], lo[1], 0.0), (hi[0], hi[1], 0.01)), ROOM_BLUE))
 
@@ -168,10 +179,13 @@ def save_screenshot(
     center: Sequence[float],
     view: str = "top",
     size: tuple[int, int] = (1280, 720),
+    zoom: float | None = None,
 ) -> bool:
-    """Render to a PNG with a hidden window. Returns False if the window could not be created."""
+    """Render to a PNG with a hidden window. Returns False if the window could not be created.
+    `zoom` overrides the view's default (larger shows more; the default fits the 3-room row)."""
     o3d = _o3d()
-    front, up, zoom, fov = VIEWS[view]
+    front, up, default_zoom, fov = VIEWS[view]
+    zoom = default_zoom if zoom is None else zoom
     vis = o3d.visualization.Visualizer()
     if not vis.create_window(width=size[0], height=size[1], visible=False):
         return False

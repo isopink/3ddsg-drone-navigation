@@ -10,6 +10,7 @@ Run from the repository root:
 Needs ffmpeg on the PATH.
 """
 import argparse
+import dataclasses
 import shutil
 import subprocess
 import sys
@@ -20,7 +21,7 @@ import numpy as np
 from ddsg_nav.flight.backends.mujoco_backend import MuJoCoBackend
 from ddsg_nav.flight.executor import follow_path
 from ddsg_nav.goal import parse_goal
-from ddsg_nav.graph.fake import build_fake_graph, build_row_graph
+from ddsg_nav.graph.fake import build_corridor_graph, build_fake_graph, build_row_graph, build_stairs_graph
 from ddsg_nav.planner.route import plan_route
 from ddsg_nav.sim.scene import build_mjcf
 
@@ -65,6 +66,10 @@ def main() -> int:
     ap.add_argument("--rooms", type=float, nargs="+", default=[2.0, 2.0, 2.0])
     ap.add_argument("--depth", type=float, default=2.0)
     ap.add_argument("--obstacle", action="store_true", help="use the 3-room fake graph with a box in B")
+    ap.add_argument("--corridor", action="store_true", help="room A, L-shaped hallway, room C")
+    ap.add_argument("--stairs", action="store_true", help="room A, stairwell, room C one floor up")
+    ap.add_argument("--cutaway", action="store_true",
+                    help="leave the south outer wall out of the picture (the flight still has it)")
     ap.add_argument("--height", type=float, default=0.5)
     ap.add_argument("--velocity", type=float, default=0.3)
     ap.add_argument("--out", default="docs/media/sim_flight")
@@ -84,7 +89,14 @@ def main() -> int:
         return 1
     width, height = a.size
 
-    graph = build_fake_graph(obstacle=True) if a.obstacle else build_row_graph(a.rooms, a.depth, 1.0)
+    if a.stairs:
+        graph = build_stairs_graph()
+    elif a.corridor:
+        graph = build_corridor_graph()
+    elif a.obstacle:
+        graph = build_fake_graph(obstacle=True)
+    else:
+        graph = build_row_graph(a.rooms, a.depth, 1.0)
     goal = parse_goal(a.text, graph)
     plan = plan_route(graph, goal.start, goal.goal, height=a.height)
     start = plan.waypoints[0]
@@ -99,7 +111,11 @@ def main() -> int:
     xyz = traj[:, 1:4]
     trail_idx = thin(xyz, 0.04)
 
-    xml = build_mjcf(graph, (start[0], start[1], 0.06))
+    shown = graph
+    if a.cutaway:  # drawing only: drop solids that lie entirely south of the rooms
+        y_min = min(r.bounds.min[1] for r in graph.rooms.values())
+        shown = dataclasses.replace(graph, solids=[b for b in graph.solids if b.max[1] > y_min + 1e-9])
+    xml = build_mjcf(shown, (start[0], start[1], 0.06))
     # bright, shadow-free look on a white background so route and drone stand out
     xml = xml.replace(
         "<option ",

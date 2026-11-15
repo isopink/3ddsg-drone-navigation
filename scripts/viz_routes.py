@@ -5,6 +5,7 @@ Run from the repository root:
     cf-env\\Scripts\\python scripts\\viz_routes.py --screenshots # also save PNGs to docs/media
     cf-env\\Scripts\\python scripts\\viz_routes.py --sim         # overlay a MuJoCo flight (blue)
     cf-env\\Scripts\\python scripts\\viz_routes.py --show "go from A to C" --obstacle
+    cf-env\\Scripts\\python scripts\\viz_routes.py --screenshots --sim --corridor  # room, L-shaped hallway, room
 """
 import argparse
 import itertools
@@ -14,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from ddsg_nav.goal import parse_goal
-from ddsg_nav.graph.fake import build_fake_graph
+from ddsg_nav.graph.fake import build_corridor_graph, build_fake_graph
 from ddsg_nav.planner.collision import check_path, check_trajectory
 from ddsg_nav.planner.route import plan_route
 
@@ -63,6 +64,7 @@ def main() -> int:
     ap.add_argument("--sim", action="store_true", help="fly the route in MuJoCo and draw it")
     ap.add_argument("--show", metavar="TEXT", help="open an interactive window for this goal text")
     ap.add_argument("--obstacle", action="store_true", help="with --show: add the box in room B")
+    ap.add_argument("--corridor", action="store_true", help="with --screenshots: room A, L-shaped hallway, room C")
     ap.add_argument("--height", type=float, default=0.5)
     a = ap.parse_args()
 
@@ -80,19 +82,23 @@ def main() -> int:
 
     if a.screenshots:
         MEDIA.mkdir(parents=True, exist_ok=True)
-        cases = [("A", "C", False), ("A", "C", True)]
-        for s, g, obstacle in cases:
-            graph = build_fake_graph(obstacle=obstacle)
+        if a.corridor:
+            cases = [("A", "C", False, build_corridor_graph, "corridor")]
+        else:
+            cases = [("A", "C", o, lambda o=o: build_fake_graph(obstacle=o), "route") for o in (False, True)]
+        for s, g, obstacle, build, prefix in cases:
+            graph = build()
             plan = plan_route(graph, s, g, height=a.height)
             traj = fly_in_sim(graph, plan) if a.sim else None
             center = o3d_viz.scene_center(graph)
-            tag = f"route_{s}_to_{g}{'_obstacle' if obstacle else ''}"
+            tag = f"{prefix}_{s}_to_{g}{'_obstacle' if obstacle else ''}"
             for view in ("top", "oblique"):
                 geoms = o3d_viz.build_geometries(
                     graph, plan.waypoints, traj, cutaway=(view == "oblique")
                 )
                 path = MEDIA / f"{tag}_{view}.png"
-                saved = o3d_viz.save_screenshot(geoms, str(path), center, view)
+                zoom = {"top": 0.66, "oblique": 0.78}[view] if a.corridor else None  # taller layout
+                saved = o3d_viz.save_screenshot(geoms, str(path), center, view, zoom=zoom)
                 print(("saved " if saved else "FAILED to save ") + str(path))
     return 0 if ok else 1
 
