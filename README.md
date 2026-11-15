@@ -37,7 +37,7 @@ py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
 pip install -e ".[neo4j,viz,sim,live,dev]"
-pytest                      # 177 tests, about 2 minutes, no drone needed
+pytest                      # 183 tests, about 2 minutes, no drone needed
 
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
@@ -56,9 +56,9 @@ cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2
 Every `fly_route.py` run is saved to `runs/<time>/` (git-ignored) with a **flight report**:
 
 - **`report.html`**: one page per run with the plan, the simulation dry run and the real flight side by side.
-  It shows a top view on the occupancy map, distance from the plan and height over time, battery, a 3D view, and the event log (take-off, waypoints, monitor abort, landing).
+  It shows a top view on the occupancy map, distance from the plan and height over time, battery, a 3D view, and the event log (take-off, waypoints, drone state changes, monitor abort, landing).
   It loads Plotly from a CDN; `--offline` embeds it instead.
-- **Live view (`--live`)**: the map, the plan and the drone in [Rerun](https://rerun.io) while it flies.
+- **Live view (`--live`)**: the map, the plan and the drone in [Rerun](https://rerun.io) while it flies. Position, distance from the plan, height, and on the real drone battery and state (locked, crashed, tumbled) update about 10 times a second from its 20 Hz log.
   The simulation then runs at wall-clock speed. The stream is also saved as `runs/<time>/flight.rrd`.
 
 ```

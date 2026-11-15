@@ -24,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-from ..flight.record import FlightRun, Listener
+from ..flight.record import FlightRun, Listener, bad_states
 from ..graph.model import Point, SceneGraph, VoxelState
 from ..report import deviations
 
@@ -85,6 +85,7 @@ class LiveView:
             rr.set_sinks(*sinks)
         self._waypoints = np.zeros((0, 3))
         self._flights: list[str] = []
+        self._bad: dict[str, list[str]] = {}  # last bad drone state per flight
         self._send_blueprint()
 
     def _send_blueprint(self) -> None:
@@ -195,6 +196,19 @@ class LiveView:
         rr.set_time(TIMELINE, duration=float(rows[-1, 0]))
         rr.log(f"world/flights/{s}/trajectory", rr.LineStrips3D([track[:, 1:4]], colors=c, radii=0.01))
 
+    def log_telemetry(self, label: str, rows: Sequence[tuple[float, float, int]]) -> None:
+        """Log telemetry rows (t, battery V, supervisor.info): the battery plot, and an event
+        whenever the drone enters or leaves a bad state (locked, crashed, tumbled)."""
+        rr, s = self.rr, slug(label)
+        for t, vbat, info in rows:
+            rr.set_time(TIMELINE, duration=float(t))
+            rr.log(f"plots/battery/{s}", rr.Scalars(float(vbat)))
+            bad = bad_states(info)
+            if bad != self._bad.get(label, []):
+                text = f"[{label}] drone state {bad}" if bad else f"[{label}] drone state ok"
+                rr.log("events", rr.TextLog(text, level="WARN" if bad else "INFO"))
+                self._bad[label] = bad
+
     def listener(self, label: str, battery: bool = True) -> Listener:
         """A FlightRecorder listener that logs status samples and events."""
         rr, s = self.rr, slug(label)
@@ -223,12 +237,13 @@ class LiveView:
 
     @contextmanager
     def follow(self, label: str, backend: Any, period_s: float = 0.1) -> Iterator[None]:
-        """Stream `backend.trajectory` to the viewer while the block runs (background thread)."""
+        """Stream `backend.trajectory` and `backend.telemetry` to the viewer while the block
+        runs (background thread)."""
         stop = threading.Event()
         self._series_style(label)
 
         def run() -> None:
-            sent = 0
+            sent = sent_tel = 0
             while True:
                 done = stop.wait(period_s)
                 traj = list(getattr(backend, "trajectory", []))
@@ -236,6 +251,10 @@ class LiveView:
                     rows = np.asarray(traj, dtype=float).reshape(-1, 4)
                     self.log_samples(label, rows[sent:], full_track=rows)
                     sent = len(rows)
+                tel = list(getattr(backend, "telemetry", []))
+                if len(tel) > sent_tel:
+                    self.log_telemetry(label, tel[sent_tel:])
+                    sent_tel = len(tel)
                 if done:
                     return
 
@@ -262,6 +281,8 @@ def replay_run(run: FlightRun, view: LiveView, chunk_s: float = 0.5) -> None:
             end = max(end, start + 1)
             view.log_samples(f.label, rows[start:end], full_track=rows[:end])
             start = end
+        if f.telemetry:
+            view.log_telemetry(f.label, f.telemetry)
         for st in f.status:
             on_record("status", st)
         for ev in f.events:

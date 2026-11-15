@@ -173,7 +173,7 @@ def main() -> int:
     finally:
         drone.close()
     report("real flight", drone, plan, aborted)
-    flights.append(rec.finish(drone.trajectory, plan.waypoints, aborted))
+    flights.append(rec.finish(drone.trajectory, plan.waypoints, aborted, telemetry=drone.telemetry))
     save(folder, graph, plan, flights, a)
     return 0 if not aborted else 1
 

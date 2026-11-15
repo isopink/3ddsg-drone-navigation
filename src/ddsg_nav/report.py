@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 
 from .flight.monitor import FlightMonitor
-from .flight.record import FlightLog, FlightRun, load_run
+from .flight.record import FlightLog, FlightRun, bad_states, load_run
 from .graph.model import VoxelState
 
 PLOTLY_CDN = "https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"
@@ -80,7 +80,22 @@ def _flight_data(f: FlightLog, waypoints: np.ndarray) -> dict[str, Any]:
         if abort_ev is not None:
             i = int(np.clip(np.searchsorted(traj[:, 0], abort_ev["t"]), 0, len(traj) - 1))
         abort_point = _round(traj[i, 1:4])
-    batteries = [s["battery_v"] for s in f.status if s.get("battery_v") is not None]
+    # battery: the 20 Hz telemetry when the backend logged it, else the per-waypoint status
+    if f.telemetry:
+        tel = _downsample(np.asarray(f.telemetry, dtype=float).reshape(-1, 3), MAX_TRAJECTORY_POINTS)
+        battery = {"t": _round(tel[:, 0], 2), "v": _round(tel[:, 1]), "source": "telemetry"}
+    else:
+        st = [s for s in f.status if s.get("battery_v") is not None]
+        battery = {"t": [round(s["t"], 2) for s in st], "v": [s["battery_v"] for s in st], "source": "status"}
+    batteries = [v for v in battery["v"] if v is not None]
+    # the drone entering or leaving a bad state (locked, crashed, tumbled), from the telemetry
+    state_events, last = [], []
+    for t, _v, info in f.telemetry:
+        bad = bad_states(info)
+        if bad != last:
+            state_events.append({"t": t, "kind": "state", "message": ", ".join(bad) if bad else "ok"})
+            last = bad
+    events = sorted(f.events + state_events, key=lambda e: e["t"])
     return {
         "label": f.label,
         "backend": f.backend,
@@ -98,10 +113,11 @@ def _flight_data(f: FlightLog, waypoints: np.ndarray) -> dict[str, Any]:
             {"t": round(s["t"], 2), "battery_v": s.get("battery_v"), "flags": s.get("flags", {})}
             for s in f.status
         ],
+        "battery": battery,
         # the simulator has no battery model and always reports the same value
         "battery_real": f.backend != "sim" and bool(batteries),
         "min_battery_v": min(batteries) if batteries and f.backend != "sim" else None,
-        "events": [{**e, "t": round(e["t"], 2)} for e in f.events],
+        "events": [{**e, "t": round(e["t"], 2)} for e in events],
     }
 
 
@@ -322,7 +338,7 @@ button.theme { background: var(--surface); color: var(--ink-2); border: 1px soli
 
   <div class="card row" id="battery-card" hidden>
     <h2>Battery</h2>
-    <p class="note">Sampled at take-off and at every waypoint. Real flights only.</p>
+    <p class="note" id="battery-note">Real flights only.</p>
     <div class="chart" id="battery"></div>
   </div>
 
@@ -424,11 +440,11 @@ if (D.flights.length > 1) {
 }
 
 // ---- tables --------------------------------------------------------------------
-const kindColor = { abort: "--critical", error: "--critical", takeoff: "--muted", waypoint: "--muted", land: "--muted", landed: "--muted" };
+const kindColor = { abort: "--critical", error: "--critical", state: "--serious", takeoff: "--muted", waypoint: "--muted", land: "--muted", landed: "--muted" };
 const events = D.flights.flatMap((f, i) => f.events.map((e) => ({ ...e, flight: f.label, fi: i })));
 $("events").innerHTML = `<thead><tr><th>Flight</th><th class="num">t (s)</th><th>Event</th><th>Details</th></tr></thead><tbody>` +
   events.map((e) => `<tr><td><span class="kind"><span class="lk" style="background:var(${flightVar(e.fi)})"></span>${esc(e.flight)}</span></td>
-    <td class="num">${fmt(e.t, 1)}</td><td><span class="kind"><span class="dot" style="background:var(${kindColor[e.kind] || "--muted"})"></span>${esc(e.kind)}</span></td>
+    <td class="num">${fmt(e.t, 1)}</td><td><span class="kind"><span class="dot" style="background:var(${e.kind === "state" && e.message === "ok" ? "--muted" : kindColor[e.kind] || "--muted"})"></span>${esc(e.kind)}</span></td>
     <td>${esc(e.message)}</td></tr>`).join("") + "</tbody>";
 $("waypoints").innerHTML = `<thead><tr><th class="num">#</th><th class="num">x (m)</th><th class="num">y (m)</th><th class="num">z (m)</th></tr></thead><tbody>` +
   D.plan.waypoints.map((p, i) => `<tr><td class="num">${i + 1}</td>${p.map((v) => `<td class="num">${fmt(v)}</td>`).join("")}</tr>`).join("") + "</tbody>";
@@ -565,7 +581,10 @@ function drawCharts() {
   const bat = D.flights.map((f, i) => ({ f, i })).filter(({ f }) => f.battery_real);
   if (bat.length) {
     $("battery-card").hidden = false;
-    timeChart("battery", bat.map(({ f, i }) => ({ name: f.label, x: f.status.map((s) => s.t), y: f.status.map((s) => s.battery_v), color: css(flightVar(i)), unit: "V" })),
+    $("battery-note").textContent = (bat.every(({ f }) => f.battery.source === "telemetry")
+      ? "Logged at 20 Hz with the position. Voltage sags under motor load."
+      : "Sampled at take-off and at every waypoint.") + " Real flights only.";
+    timeChart("battery", bat.map(({ f, i }) => ({ name: f.label, x: f.battery.t, y: f.battery.v, color: css(flightVar(i)), unit: "V" })),
       [refLine(D.limits.min_battery_v, css("--critical"), `land below ${fmt(D.limits.min_battery_v, 1)} V`)], "voltage (V)");
     Plotly.relayout("battery", { "yaxis.rangemode": "normal" });
   }

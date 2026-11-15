@@ -248,3 +248,118 @@ def test_live_view_follows_a_flight(tmp_path):
     rr.disconnect()
     assert (tmp_path / "live.rrd").stat().st_size > 1000
     assert math.isclose(rec.log.events[-1]["t"], b.t)
+
+
+# ---- 20 Hz telemetry (battery and drone state) -------------------------------
+
+TUMBLED = 1 << 5  # supervisor.info bit of isTumbled (flight/safety.py)
+
+
+class TelemetryBackend(TrackBackend):
+    """Like the real Crazyflie: battery and state logged with every position sample."""
+
+    def __init__(self, tumble_at=None, **kw):
+        super().__init__(**kw)
+        self.telemetry = []
+        self.tumble_at = tumble_at
+
+    def _move(self, p):
+        super()._move(p)
+        info = TUMBLED if self.tumble_at is not None and self.t >= self.tumble_at else 0
+        self.telemetry.append((self.t, 4.1 - 0.05 * self.t, info))
+
+
+def make_telemetry_run(tmp_path, tumble_at=None):
+    graph = build_row_graph([2.0, 2.0], 2.0, 1.0)
+    plan = plan_route(graph, "A", "B", height=0.5)
+    b = TelemetryBackend(tumble_at=tumble_at)
+    rec = FlightRecorder("real flight", "crazyflie", clock=b.clock)
+    follow_path(b, plan.waypoints, recorder=rec)
+    log = rec.finish(b.trajectory, plan.waypoints, telemetry=b.telemetry)
+    folder = save_run(FlightRun(graph=graph, plan=plan_dict(plan), flights=[log]), tmp_path / "run")
+    return folder, b
+
+
+def test_telemetry_round_trip(tmp_path):
+    folder, b = make_telemetry_run(tmp_path)
+    assert (folder / "flight_1_telemetry.csv").is_file()
+    run = load_run(folder)
+    assert run.flights[0].telemetry == [(float(t), float(v), int(s)) for t, v, s in b.telemetry]
+
+
+def test_runs_without_telemetry_have_no_telemetry_file(tmp_path):
+    folder = make_run(tmp_path)
+    assert not list(folder.glob("*_telemetry.csv"))
+    assert load_run(folder).flights[0].telemetry == []
+
+
+def test_report_uses_telemetry_for_battery_and_state(tmp_path):
+    folder, b = make_telemetry_run(tmp_path, tumble_at=3.0)
+    (f,) = report_data(load_run(folder))["flights"]
+    assert f["battery"]["source"] == "telemetry"
+    assert len(f["battery"]["t"]) == len(b.telemetry) > len(load_run(folder).flights[0].status)
+    assert f["min_battery_v"] == pytest.approx(min(v for _, v, _ in b.telemetry))
+    states = [e for e in f["events"] if e["kind"] == "state"]
+    assert [e["message"] for e in states] == ["isTumbled"] and states[0]["t"] == 3.0
+    assert [e["t"] for e in f["events"]] == sorted(e["t"] for e in f["events"])
+
+
+def test_report_falls_back_to_status_battery(tmp_path):
+    (_, real) = report_data(load_run(make_run(tmp_path)))["flights"]
+    assert real["battery"]["source"] == "status" and len(real["battery"]["v"]) == 4
+
+
+def test_live_view_streams_telemetry(tmp_path):
+    pytest.importorskip("rerun")
+    from ddsg_nav.viz.live import LiveView
+
+    graph = build_row_graph([2.0, 2.0], 2.0, 1.0)
+    plan = plan_route(graph, "A", "B", height=0.5)
+    view = LiveView(spawn=False, save=tmp_path / "live.rrd")
+    view.log_scene(graph, plan)
+    b = TelemetryBackend(tumble_at=2.0)
+    with view.follow("real flight", b, period_s=0.01):
+        follow_path(b, plan.waypoints)
+    assert view._bad["real flight"] == ["isTumbled"]  # the state change reached the viewer
+    import rerun as rr
+
+    rr.disconnect()
+    assert (tmp_path / "live.rrd").stat().st_size > 1000
+
+
+def test_crazyflie_logs_battery_and_state_with_the_position(monkeypatch):
+    """No radio: a fake log block checks the variables, the block size and the callback."""
+    pytest.importorskip("cflib")
+    from ddsg_nav.flight.backends import crazyflie as cfmod
+    from ddsg_nav.graph.transform import Transform
+
+    sizes = {"float": 4, "uint16_t": 2}
+
+    class FakeLog:
+        def __init__(self, name, period_in_ms):
+            self.vars, self.callbacks = [], []
+            self.data_received_cb = type("C", (), {"add_callback": lambda _s, cb: self.callbacks.append(cb)})()
+
+        def add_variable(self, name, typ):
+            self.vars.append((name, typ))
+
+        def start(self):
+            pass
+
+    class FakeScf:
+        cf = type("CF", (), {"log": type("L", (), {"add_config": lambda _s, lg: None})()})()
+
+    monkeypatch.setattr(cfmod, "LogConfig", FakeLog)
+    drone = cfmod.CrazyflieBackend(frame=Transform((1.0, 2.0, 0.0), 0.0))
+    drone._scf = FakeScf()
+    drone._start_trajectory_log()
+    lg = drone._traj_log
+    names = [n for n, _ in lg.vars]
+    assert {"pm.vbat", "supervisor.info", "stateEstimate.x"} <= set(names)
+    assert sum(sizes[t] for _, t in lg.vars) <= 26  # Crazyflie log block payload limit
+    lg.callbacks[0](0, {"stateEstimate.x": 0.5, "stateEstimate.y": 0.0, "stateEstimate.z": 0.4,
+                        "pm.vbat": 3.95, "supervisor.info": TUMBLED}, lg)
+    assert drone.trajectory[0][1:] == pytest.approx((1.5, 2.0, 0.4))
+    t, vbat, info = drone.telemetry[0]
+    assert t == drone.trajectory[0][0] and vbat == pytest.approx(3.95) and info == TUMBLED
+    drone._scf = None  # nothing to close

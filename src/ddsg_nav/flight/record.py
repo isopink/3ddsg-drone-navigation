@@ -12,12 +12,14 @@ flight, for example), so the report can put plan, simulation and real flight sid
         run.json          meta, plan, and per flight: result, comparison, status, events
         graph/            the scene graph flown on (graph/io.py format)
         flight_1.csv      trajectory (t, x, y, z) of each flight, graph frame
+        flight_1_telemetry.csv   battery and drone state at 20 Hz (real drone only)
         report.html       written by scripts/flight_report.py
 
 runs/ is git-ignored: it can hold lab graphs.
 """
 from __future__ import annotations
 
+import csv
 import json
 import time
 from collections.abc import Callable, Sequence
@@ -30,11 +32,34 @@ from ..graph.io import load_graph, save_graph
 from ..graph.model import Point, SceneGraph
 from .backend import Status
 from .compare import compare_to_plan, load_trajectory, save_trajectory
+from .safety import decode_supervisor
 
 FORMAT = "ddsg-flight-run"
 VERSION = 1
 
 Trajectory = list[tuple[float, float, float, float]]
+Telemetry = list[tuple[float, float, int]]  # (t, battery V, supervisor.info bits)
+BAD_STATES = ("isLocked", "isCrashed", "isTumbled")
+
+
+def bad_states(supervisor_info: int) -> list[str]:
+    flags = decode_supervisor(int(supervisor_info))
+    return [k for k in BAD_STATES if flags.get(k)]
+
+
+def save_telemetry(path: str | Path, telemetry: Telemetry) -> Path:
+    path = Path(path)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["t", "battery_v", "supervisor_info"])
+        w.writerows(telemetry)
+    return path
+
+
+def load_telemetry(path: str | Path) -> Telemetry:
+    with Path(path).open(newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    return [(float(t), float(v), int(float(s))) for t, v, s in rows[1:]]
 
 
 @dataclass
@@ -49,6 +74,7 @@ class FlightLog:
     aborted: str | None = None  # why the flight stopped early, None if it completed
     collisions: int | None = None  # simulation only: steps in contact with a wall
     comparison: dict[str, float] | None = None  # compare.PlanComparison fields
+    telemetry: Telemetry = field(default_factory=list)  # 20 Hz battery and state (real drone)
 
     @property
     def ok(self) -> bool:
@@ -104,11 +130,13 @@ class FlightRecorder:
         waypoints: Sequence[Point],
         aborted: str | None = None,
         collisions: int | None = None,
+        telemetry: Sequence[tuple[float, float, int]] = (),
     ) -> FlightLog:
         log = self.log
         log.trajectory = [tuple(float(v) for v in row) for row in trajectory]  # type: ignore[misc]
         log.aborted = aborted
         log.collisions = collisions
+        log.telemetry = [(float(t), float(v), int(s)) for t, v, s in telemetry]
         if log.trajectory and waypoints:
             log.comparison = asdict(compare_to_plan(waypoints, log.trajectory))
         return log
@@ -156,6 +184,9 @@ def save_run(run: FlightRun, folder: str | Path) -> Path:
     flights = []
     for i, f in enumerate(run.flights, start=1):
         csv_name = f"flight_{i}.csv"
+        tel_name = f"flight_{i}_telemetry.csv" if f.telemetry else None
+        if tel_name:
+            save_telemetry(folder / tel_name, f.telemetry)
         save_trajectory(folder / csv_name, f.trajectory)
         flights.append(
             {
@@ -165,6 +196,7 @@ def save_run(run: FlightRun, folder: str | Path) -> Path:
                 "collisions": f.collisions,
                 "comparison": f.comparison,
                 "trajectory_file": csv_name,
+                "telemetry_file": tel_name,
                 "status": f.status,
                 "events": f.events,
             }
@@ -189,6 +221,7 @@ def load_run(folder: str | Path) -> FlightRun:
     flights = []
     for f in doc["flights"]:
         traj_path = folder / f["trajectory_file"]
+        tel_path = folder / f["telemetry_file"] if f.get("telemetry_file") else None
         flights.append(
             FlightLog(
                 label=f["label"],
@@ -199,6 +232,7 @@ def load_run(folder: str | Path) -> FlightRun:
                 aborted=f.get("aborted"),
                 collisions=f.get("collisions"),
                 comparison=f.get("comparison"),
+                telemetry=load_telemetry(tel_path) if tel_path and tel_path.is_file() else [],
             )
         )
     return FlightRun(
