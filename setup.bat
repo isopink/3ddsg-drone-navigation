@@ -1,9 +1,9 @@
 @echo off
-rem Double-click: sets up Python the first time, then opens the runs dashboard.
+rem Double-click: sets up Python (cf-env) the first time.
 setlocal
 cd /d "%~dp0"
 
-if exist "cf-env\Scripts\python.exe" goto run
+if exist "cf-env\Scripts\python.exe" goto done
 
 echo First start: setting up Python in cf-env (a few minutes, needs internet)...
 where py >nul 2>nul
@@ -29,7 +29,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:run
-echo Starting the runs dashboard. Keep this window open while you experiment.
-"cf-env\Scripts\python.exe" scripts\dashboard.py %*
-if errorlevel 1 pause
+:done
+echo.
+echo Setup done. Double-click experiment_terminal.bat to fly.
+pause

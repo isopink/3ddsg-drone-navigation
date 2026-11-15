@@ -43,8 +43,8 @@ Open tasks are tracked in **[Issues](https://github.com/isopink/3ddsg-drone-navi
 
 Windows, [Python 3.12](https://www.python.org/downloads/). Clone the repo, then double-click:
 
-1. **`start_dashboard.bat`**: first run installs `cf-env`, then opens the runs dashboard. Keep it open.
-2. **`experiment_terminal.bat`**: a terminal with the environment active. Fly from here; the dashboard only shows results.
+1. **`setup.bat`**: installs `cf-env` (first run only).
+2. **`experiment_terminal.bat`**: a terminal with the environment active. Fly from here.
 
 Command reference (Korean): `type scripts\manual.txt`
 
@@ -84,7 +84,6 @@ Every `fly_route.py` run is saved to `runs/<time>/` (git-ignored) with `report.h
 </p>
 
 ```
-python scripts\dashboard.py
 python scripts\flight_report.py runs\<time> --open
 python scripts\replay_run.py runs\<time>
 ```
