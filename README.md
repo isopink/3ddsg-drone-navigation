@@ -33,9 +33,9 @@ Done: setup, hover and forward flight on the real drone; goal parsing; route pla
 
 | Milestone | | Status |
 |---|---|---|
-| M1 | Real flight in virtual rooms | Next. Needs a person to fly |
-| M2 | Real building graph (test IFC now, 3DDSG when it arrives) | Next |
-| M3 | Range-sensor obstacle stop (Multi-ranger deck) | Next. Simulation first |
+| M1 | Real flight in virtual rooms | Hover and backend review done. **Route flight next** (#10), needs a person |
+| M2 | Real building graph (test IFC now, 3DDSG when it arrives) | IFC pipeline ready. Waiting for the IFC and the 3DDSG |
+| M3 | Range-sensor obstacle stop (Multi-ranger deck) | Simulation and software done. Waiting for the deck |
 | M4 | Demo 1: same floor, real flight in the 3DDSG building | After M1 and M2. **Due end of November** |
 | M5 | Demo 2: between floors | After M4 |
 | M6 | Dynamic objects, re-planning | After M3 |
@@ -62,7 +62,7 @@ py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
 pip install -e ".[neo4j,viz,sim,dev]"
-pytest                      # 192 tests, under a minute, no drone needed
+pytest                      # about 250 tests, under a minute, no drone needed
 
 python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```

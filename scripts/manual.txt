@@ -19,6 +19,7 @@ REAL-DRONE CHECKS (in this order)
   check_sensors.py                 Read the sensors without flying.
       --watch                      Live values until Ctrl+C.
       --shake                      15 s vibration test in your hand.
+    Shows the Multi-ranger ranges when the deck is mounted.
   prop_test.py                     Spin the propellers without take-off.
   hover_test.py                    Take off, hover, fly forward, land.
       --live                       Print motors, height, position, battery.
@@ -26,6 +27,9 @@ REAL-DRONE CHECKS (in this order)
       --height, --velocity, --hover-time, --min-battery
 
 GRAPH
+  ifc_pipeline.py model.ifc --storey 4F
+                                   IFC storey to simulated flights in one step.
+                                   Without --storey: list the storeys.
   ifc_to_graph.py model.ifc out --storey 4F
                                    Convert one IFC storey to a graph folder.
   graph_tools.py export-fake out   Write the generated test graph.
@@ -38,3 +42,5 @@ LIMITS
   Bright room, textured floor. Height 0.2 to 3.0 m.
   Battery 3.7 V or more at take-off.
   backends\crazyflie.py is not flight-tested yet.
+  With a Multi-ranger deck, the drone lands if anything is closer than 0.2 m
+  (checked at each waypoint).
