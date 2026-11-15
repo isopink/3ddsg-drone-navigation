@@ -6,6 +6,13 @@ FLY
   fly_route.py "from A to B"       Plan a route and fly it.
       --backend sim|crazyflie      Simulation (default) or the real drone.
       --rooms 2 2  --depth 2       Virtual rooms: widths and depth in m.
+      --graph folder               Fly a real graph folder instead of virtual rooms.
+      --start X Y                  Drone stands here in the start room (graph frame).
+      --policy obstacle|free_in_rooms|free
+                                   How to treat unobserved voxels.
+      --current-room A             Start room when the sentence names only the goal.
+      --check-step 0.1             Real drone: stop and check every 0.1 m
+                                   (use with the Multi-ranger deck).
       --height 0.5                 Flight height above the floor in m.
       --velocity 0.2               Speed in m/s. Above 0.3 is untested.
       --margin 0.25                Distance kept from walls in m.
@@ -27,6 +34,9 @@ REAL-DRONE CHECKS (in this order)
       --height, --velocity, --hover-time, --min-battery
 
 GRAPH
+  graph_pipeline.py folder         Validate, plan and simulate a graph folder.
+  graph_pipeline.py --neo4j URI --floor NAME --save folder
+                                   Same from Neo4j (DDSG_NEO4J_USER, DDSG_NEO4J_PASSWORD).
   ifc_pipeline.py model.ifc --storey 4F
                                    IFC storey to simulated flights in one step.
                                    Without --storey: list the storeys.
@@ -37,6 +47,11 @@ GRAPH
   graph_tools.py route folder "from A to B"
                                    Plan a route on a graph folder.
   check_routes.py                  Collision check and Open3D view of routes.
+  check_routes.py --graph folder "from A to C" --png
+                                   Picture of a route on a graph folder (data\previews).
+  check_routes.py --graph folder --all-pairs
+                                   Collision table for every room pair.
+  ifc_to_graph.py ... --report     Also list what was converted and skipped.
 
 LIMITS
   Bright room, textured floor. Height 0.2 to 3.0 m.

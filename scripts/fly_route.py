@@ -25,7 +25,7 @@ import sys
 import time
 
 from ddsg_nav.flight.compare import compare_to_plan
-from ddsg_nav.flight.executor import follow_path
+from ddsg_nav.flight.executor import CHECK_STEP_M, follow_path
 from ddsg_nav.flight.monitor import FlightAbort, FlightMonitor
 from ddsg_nav.goal import GoalError, parse_goal
 from ddsg_nav.llm_goal import llm_from_env
@@ -113,11 +113,15 @@ def make_monitor(graph, waypoints, max_deviation: float) -> FlightMonitor:
     return FlightMonitor(bounds=Box(tuple(lo), tuple(hi)), path=waypoints, max_deviation_m=max_deviation)
 
 
-def fly(backend, plan, graph, velocity, pause, max_deviation):
-    """Fly the plan. Returns why it was aborted, or None."""
+def fly(backend, plan, graph, velocity, pause, max_deviation, check_step=CHECK_STEP_M):
+    """Fly the plan. Returns why it was aborted, or None.
+
+    `check_step`: longest move between two monitor checks in m; None checks at waypoints only.
+    """
     monitor = make_monitor(graph, plan.waypoints, max_deviation)
     try:
-        follow_path(backend, plan.waypoints, velocity=velocity, segment_pause=pause, monitor=monitor)
+        follow_path(backend, plan.waypoints, velocity=velocity, segment_pause=pause, monitor=monitor,
+                    check_step_m=check_step)
     except FlightAbort as e:
         return str(e)
     except KeyboardInterrupt:
@@ -153,6 +157,9 @@ def main(argv=None) -> int:
     ap.add_argument("--velocity", type=float, default=0.2, help="m/s, no maximum (above 0.3 is untested)")
     ap.add_argument("--margin", type=float, default=0.25)
     ap.add_argument("--max-deviation", type=float, default=0.5, help="abort if farther than this from the plan")
+    ap.add_argument("--check-step", type=float, default=None,
+                    help="real drone: stop and check every this many m along a segment "
+                         "(use 0.1 with the Multi-ranger deck; default: check at waypoints only)")
     ap.add_argument("--yaw", type=float, default=0.0,
                     help="real drone: nose direction in the graph frame, degrees from +x toward +y")
     ap.add_argument("--uri", default="radio://0/80/2M")
@@ -228,7 +235,9 @@ def main(argv=None) -> int:
     time.sleep(8)
     drone = CrazyflieBackend(a.uri, frame=Transform((start[0], start[1], floor), a.yaw))
     try:
-        aborted = fly(drone, plan, graph, a.velocity, 0.5, a.max_deviation)
+        # The simulation checks every 0.1 m. On the real drone that means a stop and a status
+        # read every 0.1 m, which is untested: off unless asked for (needed with the Multi-ranger).
+        aborted = fly(drone, plan, graph, a.velocity, 0.5, a.max_deviation, check_step=a.check_step or None)
     finally:
         drone.close()
     report("real flight", drone, plan, aborted)
