@@ -15,116 +15,32 @@ Needs `pip install -e ".[ifc,sim]"`.
 from __future__ import annotations
 
 import argparse
-import math
 import re
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 
-import networkx as nx
-
-from ddsg_nav.flight.executor import follow_path
-from ddsg_nav.flight.monitor import FlightAbort, FlightMonitor
+from ddsg_nav import pipeline
 from ddsg_nav.graph.io import save_graph
-from ddsg_nav.graph.model import SceneGraph
-from ddsg_nav.planner.collision import check_path
-from ddsg_nav.planner.global_planner import NoRoomRouteError
-from ddsg_nav.planner.local_planner import NoPathError
-from ddsg_nav.planner.route import plan_route
-from ddsg_nav.validate import ValidationReport, validate_graph
+from ddsg_nav.pipeline import PipelineResult, RouteResult, fly_route, pick_pairs  # noqa: F401 (shared steps)
 
 from ifc_to_graph import ConversionError, convert, list_storeys
 
-
-@dataclass
-class RouteResult:
-    start: str
-    goal: str
-    rooms: list[str] = field(default_factory=list)
-    length_m: float = 0.0
-    flown: bool = False
-    wall_contacts: int = 0
-    failure: str | None = None  # "step: reason"
-
-
-@dataclass
-class PipelineResult:
-    graph: SceneGraph | None = None
-    out: Path | None = None
-    notes: list[str] = field(default_factory=list)  # from the converter
-    validation: ValidationReport | None = None
-    doorless: list[str] = field(default_factory=list)  # rooms nothing connects to
-    routes: list[RouteResult] = field(default_factory=list)
-    failures: list[str] = field(default_factory=list)  # "step: reason"
-
-    @property
-    def ok(self) -> bool:
-        return not self.failures
-
-    @property
-    def wall_contacts(self) -> int:
-        return sum(r.wall_contacts for r in self.routes)
-
-
-def pick_pairs(graph: SceneGraph, n: int) -> list[tuple[str, str]]:
-    """Up to `n` room pairs to fly: the longest routes first, each room used once."""
-    g = graph.room_graph()
-    lengths = dict(nx.all_pairs_dijkstra_path_length(g, weight="weight"))
-    pairs = sorted((-d, a, b) for a in lengths for b, d in lengths[a].items() if a < b)
-    chosen: list[tuple[str, str]] = []
-    used: set[str] = set()
-    for _, a, b in pairs:
-        if len(chosen) < n and a not in used and b not in used:
-            chosen.append((a, b))
-            used |= {a, b}
-    return chosen
-
-
-def fly_route(graph: SceneGraph, start: str, goal: str, height: float, margin: float,
-              velocity: float) -> RouteResult:
-    """Plan one route, check it against the voxels and fly it in the simulator."""
-    r = RouteResult(start, goal)
-    try:
-        plan = plan_route(graph, start, goal, height, margin)
-    except KeyError as e:
-        r.failure = (f"plan: {e.args[0]}. Use a room id or name of this storey: "
-                     f"{', '.join(sorted(graph.rooms))}")
-        return r
-    except NoRoomRouteError as e:
-        r.failure = f"plan: {e}: no chain of doors connects them. Pick rooms that are connected"
-        return r
-    except NoPathError as e:
-        r.failure = f"plan: {e}. Try a lower --margin or another --height"
-        return r
-    r.start, r.goal, r.rooms = plan.rooms[0], plan.rooms[-1], plan.rooms
-    r.length_m = sum(math.dist(a, b) for a, b in zip(plan.waypoints, plan.waypoints[1:]))
-    check = check_path(graph, plan.waypoints, margin)
-    if not check.ok:
-        r.failure = f"plan: the route breaks the {margin} m safety margin ({check.summary()})"
-        return r
-    try:
-        from ddsg_nav.flight.backends.mujoco_backend import MuJoCoBackend, SimTimeoutError
-        sim = MuJoCoBackend(graph, (plan.waypoints[0][0], plan.waypoints[0][1], graph.floor_z(r.start)))
-    except ImportError:
-        r.failure = 'simulate: MuJoCo is not installed. Run: pip install -e ".[sim]"'
-        return r
-    try:
-        follow_path(sim, plan.waypoints, velocity=velocity,
-                    monitor=FlightMonitor(path=plan.waypoints, max_deviation_m=0.5))
-    except (FlightAbort, SimTimeoutError) as e:
-        r.failure = f"simulate: flight aborted: {e}"
-    r.flown = r.failure is None
-    r.wall_contacts = sim.collisions
-    if sim.collisions and r.failure is None:
-        r.failure = f"simulate: the drone touched a wall ({sim.collisions} contact steps)"
-    return r
+HINTS = pipeline.Hints(
+    scope="storey",
+    no_pairs="Check the doors and space boundaries of the IFC (see the notes above)",
+    doorless="They cannot be reached. If one should be, its door has no space boundary to it in the "
+             "IFC: fix the door or the export; shafts can be left out with --exclude",
+)
 
 
 def run(ifc: str, storey: str, out: str | Path | None = None, start: str | None = None,
         goal: str | None = None, routes: int = 3, res: float = 0.1, height: float = 0.5,
         margin: float = 0.25, velocity: float = 0.3, exclude: str | None = None,
         log=lambda line: None) -> PipelineResult:
-    """Run the four steps. Stops at the first step that fails; `log` gets progress lines."""
+    """Run the four steps. Stops at the first step that fails; `log` gets progress lines.
+
+    Step 1 is here; steps 2 to 4 are shared with graph_pipeline.py (ddsg_nav/pipeline.py).
+    """
     result = PipelineResult()
     try:
         graph, result.notes = convert(ifc, storey, res, exclude=exclude)
@@ -137,58 +53,12 @@ def run(ifc: str, storey: str, out: str | Path | None = None, start: str | None 
     log(f"[1/4] convert   {len(graph.rooms)} rooms, {len(graph.doors) - n_open} doors, {n_open} open "
         f"connections, {len(graph.solids)} wall boxes, voxels {graph.voxels.shape} -> {result.out}")
 
-    report = result.validation = validate_graph(graph, height, margin)
-    result.failures += [f"validate: {i.code}: {i.message}" for i in report.errors]
-    degree = graph.room_graph().degree
-    result.doorless = sorted(r for r in graph.rooms if degree[r] == 0)
-    log(f"[2/4] validate  {len(report.errors)} errors, {len(report.warnings)} warnings")
-    if not report.ok:
-        return result
-
-    if (start is None) != (goal is None):
-        result.failures.append("plan: give both --from and --to, or neither")
-        return result
-    pairs = [(start, goal)] if start is not None else pick_pairs(graph, routes)
-    if not pairs:
-        result.failures.append("plan: no two rooms are connected, so there is nothing to fly. Check the "
-                               "doors and space boundaries of the IFC (see the notes above)")
-        return result
-    log(f"[3/4] plan      {len(pairs)} routes at {height} m, {margin} m from walls")
-    for i, (a, b) in enumerate(pairs, 1):
-        r = fly_route(graph, a, b, height, margin, velocity)
-        result.routes.append(r)
-        if r.failure:
-            result.failures.append(f"route {r.start} -> {r.goal}: {r.failure}")
-        log(f"[4/4] simulate  route {i}/{len(pairs)} {r.start} -> {r.goal}: "
-            + (r.failure or f"{r.length_m:.1f} m, {r.wall_contacts} wall contacts"))
-    return result
+    return pipeline.check_graph(graph, result, start, goal, routes, height, margin, velocity,
+                                log=log, hints=HINTS)
 
 
 def format_report(result: PipelineResult) -> str:
-    lines = ["", "--- report ---"]
-    lines += [f"note: {n}" for n in result.notes]
-    if result.graph is not None:
-        g = result.graph
-        n_open = sum(d.startswith("open_") for d in g.doors)
-        lines.append(f"rooms: {len(g.rooms)}")
-        lines.append(f"doors: {len(g.doors) - n_open} (+ {n_open} open connections without a wall)")
-    if result.doorless:
-        lines.append(f"rooms without a door: {', '.join(result.doorless)}. They cannot be reached. If one "
-                     f"should be, its door has no space boundary to it in the IFC: fix the door or the "
-                     f"export; shafts can be left out with --exclude")
-    if result.validation is not None:
-        lines += [f"warning: {i.code}: {i.message}" for i in result.validation.warnings
-                  if i.code != "isolated-room"]
-    planned = [r for r in result.routes if r.rooms]
-    lines.append(f"routes planned: {len(planned)} of {len(result.routes)}")
-    for r in planned:
-        lines.append(f"  {' > '.join(r.rooms)}: {r.length_m:.1f} m, "
-                     + (f"{r.wall_contacts} wall contacts" if r.flown else "not flown to the end"))
-    lines.append(f"routes flown: {sum(r.flown for r in result.routes)}")
-    lines.append(f"wall contacts: {result.wall_contacts}")
-    lines += [f"FAILED {f}" for f in result.failures]
-    lines.append(f"RESULT: {'PASS' if result.ok else 'FAIL'} ({len(result.failures)} failures)")
-    return "\n".join(lines)
+    return pipeline.format_report(result, HINTS)
 
 
 def main(argv: list[str] | None = None) -> int:
