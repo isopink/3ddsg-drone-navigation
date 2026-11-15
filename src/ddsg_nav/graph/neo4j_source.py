@@ -1,4 +1,4 @@
-﻿"""Neo4j graph source (Step 4). NOT implemented: the database schema is not known yet.
+﻿"""Neo4j graph source. NOT implemented: the database schema is not known yet.
 
 What this adapter has to produce (the same SceneGraph as the fake graph and the file
 export), from one floor of the building graph:

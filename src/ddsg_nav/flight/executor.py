@@ -9,7 +9,7 @@ from .backend import DroneBackend
 from .monitor import FlightAbort, FlightMonitor
 from .record import FlightRecorder
 
-MAX_VELOCITY = 0.3  # m/s, safety cap (Step 3 requirement)
+MAX_VELOCITY = 0.3  # m/s, safety cap
 
 
 def follow_path(
