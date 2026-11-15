@@ -71,6 +71,10 @@ def ground_check(scf) -> int:
         safety.check_ground_height(z)
     except safety.SafetyError as e:
         problems.append(str(e))
+        if len(set(z)) == 1:
+            problems.append("a stuck height sensor repeats one value even when lifted (check with --watch): "
+                            "take the battery out for 10 s, power on, and check again. "
+                            "If it keeps happening, the Flow deck is failing")
     if min(q) < MIN_SQUAL:
         problems.append(f"flow quality drops to {min(q)} (< {MIN_SQUAL}): more light, textured floor, clean sensor")
     try:
