@@ -48,7 +48,13 @@ def check_battery(vbat: float, minimum: float = MIN_BATTERY_V) -> None:
 
 
 def check_ground_height(values_mm: Sequence[int], max_mm: int = MAX_GROUND_HEIGHT_MM) -> None:
-    """Height sensor sanity: low on the ground and not frozen."""
+    """Height sensor sanity: low on the ground and not dead.
+
+    A dead sensor reads 0 every time (seen after a failed deck start) or an error value such
+    as 65535 (caught by `max_mm`). A steady small value is NOT treated as frozen: very close
+    to the floor the sensor often repeats the same reading (e.g. 4 mm ten times) while it is
+    healthy, and that falsely blocked take-off.
+    """
     if not values_mm:
         raise SafetyError("no height sensor readings")
     if max(values_mm) > max_mm:
@@ -56,5 +62,8 @@ def check_ground_height(values_mm: Sequence[int], max_mm: int = MAX_GROUND_HEIGH
             f"height sensor reads {max(values_mm)} mm on the ground (expected < {max_mm}): "
             "sensor blocked or faulty"
         )
-    if len(set(values_mm)) == 1:
-        raise SafetyError(f"height sensor frozen at {values_mm[0]} mm")
+    if all(v == 0 for v in values_mm):
+        raise SafetyError(
+            "height sensor reads 0 mm every time: the Flow deck sensor did not start. "
+            "Power-cycle the drone (battery out) and check the deck pins"
+        )
