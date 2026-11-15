@@ -26,6 +26,7 @@ class FlightMonitor:
     max_duration_s: float | None = None
     path: Sequence[Point] | None = None  # planned waypoints, for the deviation check
     bad_flags: tuple[str, ...] = ("isLocked", "isCrashed", "isTumbled")
+    min_range_m: float | None = 0.2  # Multi-ranger: closest allowed obstacle; None turns it off
 
     def check(self, status: Status, elapsed_s: float = 0.0) -> None:
         if status.battery_v is not None and status.battery_v < self.min_battery_v:
@@ -35,6 +36,13 @@ class FlightMonitor:
             raise FlightAbort(f"drone state {bad}")
         if self.max_duration_s is not None and elapsed_s > self.max_duration_s:
             raise FlightAbort(f"flight took {elapsed_s:.0f} s, limit {self.max_duration_s:.0f} s")
+        if self.min_range_m is not None:
+            close = {d: r for d, r in status.ranges.items() if r < self.min_range_m}
+            if close:
+                d = min(close, key=close.get)
+                raise FlightAbort(
+                    f"obstacle {close[d]:.2f} m to the {d} (range limit {self.min_range_m} m)"
+                )
         p = status.position
         if p is None:
             return

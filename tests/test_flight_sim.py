@@ -130,6 +130,16 @@ def test_monitor_aborts(status, kwargs, needle):
         mon.check(status, 1.0)
 
 
+def test_monitor_range_limit():
+    near = Status(4.0, {}, (2, 0, 0.5), {"front": 1.5, "left": 0.15, "up": 0.18})
+    with pytest.raises(FlightAbort, match="0.15 m to the left"):  # names the closest one
+        FlightMonitor().check(near)
+    FlightMonitor(min_range_m=None).check(near)  # check turned off
+    FlightMonitor(min_range_m=0.1).check(near)
+    FlightMonitor().check(Status(4.0, {}, (2, 0, 0.5), {"front": 0.2}))  # at the limit is fine
+    FlightMonitor().check(Status(4.0, {}, (2, 0, 0.5)))  # no deck: no ranges, no abort
+
+
 def test_monitor_duration_limit():
     mon = FlightMonitor(max_duration_s=30)
     mon.check(Status(), 29.0)

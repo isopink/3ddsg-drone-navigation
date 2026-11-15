@@ -2,13 +2,15 @@
 
 Headless. `trajectory` holds (t, x, y, z) samples; `collisions` counts simulation
 steps in which the drone touched a wall/obstacle (the floor does not count).
+`status()` carries simulated Multi-ranger distances (ray casts from the drone).
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 
 import numpy as np
 
-from ...graph.model import Point, SceneGraph
+from ...graph.model import Box, Point, SceneGraph
 from ...sim.quadrotor import GeometricController, QuadrotorParams
 from ...sim.scene import DRONE_BODY, DRONE_GEOM, FLOOR_GEOM, build_mjcf
 from ..backend import DroneBackend, Status
@@ -16,6 +18,14 @@ from ..backend import DroneBackend, Status
 ARRIVE_POS_TOL = 0.06  # m
 ARRIVE_VEL_TOL = 0.12  # m/s
 LAND_Z = 0.04  # m, sphere radius is 0.05 so this presses on the floor
+RANGE_MAX = 4.0  # m, Multi-ranger reach
+RANGE_AXES = {  # body frame: x forward, y left, z up
+    "front": (1.0, 0.0, 0.0),
+    "back": (-1.0, 0.0, 0.0),
+    "left": (0.0, 1.0, 0.0),
+    "right": (0.0, -1.0, 0.0),
+    "up": (0.0, 0.0, 1.0),
+}
 
 
 class SimTimeoutError(RuntimeError):
@@ -29,6 +39,7 @@ class MuJoCoBackend(DroneBackend):
         start: Point,
         params: QuadrotorParams | None = None,
         record_dt: float = 0.02,
+        extra_solids: Sequence[Box] = (),  # obstacles the graph does not contain
     ) -> None:
         try:
             import mujoco
@@ -40,7 +51,9 @@ class MuJoCoBackend(DroneBackend):
         self.params = params or QuadrotorParams()
         # start slightly above the floor so the sphere does not begin in contact
         floor_start = (start[0], start[1], max(start[2], self.params.radius + 0.01))
-        self.model = mujoco.MjModel.from_xml_string(build_mjcf(graph, floor_start, self.params))
+        self.model = mujoco.MjModel.from_xml_string(
+            build_mjcf(graph, floor_start, self.params, extra_solids=extra_solids)
+        )
         self.data = mujoco.MjData(self.model)
         self._body = self.model.body(DRONE_BODY).id
         self._geom = self.model.geom(DRONE_GEOM).id
@@ -72,6 +85,23 @@ class MuJoCoBackend(DroneBackend):
     def position(self) -> Point:
         x, y, z = self.data.xpos[self._body]
         return (float(x), float(y), float(z))
+
+    def ranges(self) -> dict[str, float]:
+        """Distance in meters from the drone center to the nearest surface in each direction.
+
+        Directions with nothing within RANGE_MAX are left out.
+        """
+        pos = self.data.xpos[self._body].copy()
+        rot = self.data.xmat[self._body].reshape(3, 3)
+        hit = np.zeros(1, dtype=np.int32)
+        out: dict[str, float] = {}
+        for name, axis in RANGE_AXES.items():
+            d = self._mj.mj_ray(
+                self.model, self.data, pos, rot @ np.array(axis), None, 1, self._body, hit
+            )
+            if 0.0 <= d <= RANGE_MAX:
+                out[name] = float(d)
+        return out
 
     def _record(self) -> None:
         x, y, z = self.data.xpos[self._body]
@@ -167,7 +197,8 @@ class MuJoCoBackend(DroneBackend):
         self._fly_to(np.array([x, y, z], dtype=float), velocity)
 
     def status(self) -> Status:
-        return Status(battery_v=4.1, position=self.position())  # no battery model
+        # no battery model
+        return Status(battery_v=4.1, position=self.position(), ranges=self.ranges())
 
     def land(self) -> None:
         if not self._flying:
