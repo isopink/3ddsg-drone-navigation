@@ -178,9 +178,20 @@ def test_executor_lands_when_the_monitor_aborts():
     bad = Status(4.0, {"isTumbled": True}, (1, 0, 0.5))
     b = ScriptedBackend([ok, ok, bad])  # after take-off, after waypoint 0, after waypoint 1 -> abort
     with pytest.raises(FlightAbort):
-        follow_path(b, wps, monitor=FlightMonitor())
+        follow_path(b, wps, monitor=FlightMonitor(), check_step_m=None)  # checks at waypoints only
     assert b.calls[-1] == "land"
     assert sum(isinstance(c, tuple) for c in b.calls) == 2  # stopped before waypoints 2 and 3
+
+
+def test_executor_checks_along_a_segment():
+    wps = [(0, 0, 0.5), (1, 0, 0.5)]
+    ok = Status(4.0, {}, (0, 0, 0.5))
+    near = Status(4.0, {}, (0.3, 0, 0.5), {"front": 0.15})
+    b = ScriptedBackend([ok, ok, ok, ok, near])  # take-off, waypoint 0, steps to x=0.1, 0.2, 0.3
+    with pytest.raises(FlightAbort, match="to the front"):
+        follow_path(b, wps, monitor=FlightMonitor())
+    assert b.calls[-1] == "land"
+    assert [c[1] for c in b.calls if isinstance(c, tuple)] == pytest.approx([0, 0.1, 0.2, 0.3])
 
 
 def test_executor_without_monitor_is_unchanged():
