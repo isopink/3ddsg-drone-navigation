@@ -26,7 +26,7 @@ MOVE_DISTANCE = 1.0  # m
 VELOCITY = 0.2       # m/s (slow on purpose)
 MIN_BATTERY_V = 3.7  # refuse to fly below this
 MIN_RECOMMENDED_HEIGHT = 0.2  # m, Flow deck v2 documented minimum
-MAX_TEST_HEIGHT = 1.0         # m, safety cap for this test script
+MAX_TEST_HEIGHT = 2.0         # m, safety cap for this test script (Flow deck v2 range: up to 3 m)
 
 
 def check_flow_deck(scf: SyncCrazyflie, timeout: float = 5.0) -> bool:
