@@ -94,6 +94,12 @@ def test_check_ground_height():
     with pytest.raises(safety.SafetyError):
         safety.check_ground_height([201] * 10)  # sensor stuck at 201 mm before the crash
     with pytest.raises(safety.SafetyError):
-        safety.check_ground_height([0, 0, 0, 0])  # frozen
+        safety.check_ground_height([0, 0, 0, 0])  # dead: Flow deck sensor did not start
+    with pytest.raises(safety.SafetyError):
+        safety.check_ground_height([65535] * 10)  # sensor error value
     with pytest.raises(safety.SafetyError):
         safety.check_ground_height([])
+    # healthy sensor very close to the floor: steady or near-zero readings must not block take-off
+    safety.check_ground_height([4] * 10)  # seen on hardware, falsely called "frozen" before
+    safety.check_ground_height([1, 3, 1, 3, 3, 4, 4, 5, 4, 2])  # same drone, flew fine
+    safety.check_ground_height([0, 1, 0, 2, 0])  # occasional 0 next to real readings
