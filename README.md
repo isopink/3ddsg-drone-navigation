@@ -22,10 +22,9 @@ This repo is the part that **takes the graph and flies the drone**. Graph constr
 | 5 Dynamic objects, re-planning | Not started |
 
 <p align="center">
-  <img src="docs/media/virtual_A_to_C_top.png" alt="Virtual rooms A to C, top view: planned route and simulated flight" width="49%">
-  <img src="docs/media/virtual_A_to_C_oblique.png" alt="Virtual rooms A to C, oblique view" width="49%">
+  <img src="docs/media/sim_results.png" alt="Simulation results: scenario 1 (room, L-shaped corridor, room) and scenario 2 (room, stairwell, room one floor up), both with no wall contact; safety margin fix from 12.5-18 cm to 25 cm at corners" width="100%">
   <br>
-  <sub>Step 3 in simulation: three virtual rooms sized to the real flying space, "go from A to C". Red is the planned route, blue the simulated flight. Start is green, goal magenta, doors are green outlines.</sub>
+  <sub>Simulation results. Videos: <a href="docs/media/sim_corridor.mp4">scenario 1</a> · <a href="docs/media/sim_stairs.mp4">scenario 2</a> · <code>render_sim_video.py --corridor</code> / <code>--stairs --cutaway</code></sub>
 </p>
 
 ## Quick start for experiments
@@ -48,7 +47,7 @@ py -3.12 -m venv cf-env
 cf-env\Scripts\activate
 pip install cfclient
 pip install -e ".[neo4j,viz,sim,live,dev]"
-pytest                      # 185 tests, about 2 minutes, no drone needed
+pytest                      # 208 tests, about 2 minutes, no drone needed
 
 cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
