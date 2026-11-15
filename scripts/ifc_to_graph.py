@@ -16,12 +16,19 @@ What it does (see docs/graph_format.md for the output):
           ceilings, MEP, fixtures, ...) is OCCUPIED (its surface, sampled at res/2).
           Space interiors and door openings that are not occupied are FREE.
           Everything else stays UNKNOWN.
-  frame   x, y as in the IFC (meters); z = 0 at the storey elevation.
+  solids  boxes that cover the occupied voxels from 0.2 m above the floor (the
+          simulator's walls; its ground plane stands in for the floor).
+  frame   x, y as in the IFC, in meters (other length units are converted);
+          z = 0 at the storey elevation.
+
+Bad input raises ConversionError with what is wrong and what to do about it.
+One command for convert, validate, plan and simulate: scripts\\ifc_pipeline.py
 """
 from __future__ import annotations
 
 import argparse
 import multiprocessing
+import os
 import re
 import sys
 from collections import defaultdict
@@ -31,15 +38,25 @@ import numpy as np
 try:
     import ifcopenshell
     import ifcopenshell.geom
+    import ifcopenshell.util.element
+    import ifcopenshell.util.placement
+    import ifcopenshell.util.unit
     from shapely.geometry import LineString, MultiLineString, Polygon as ShPolygon
     from shapely.ops import unary_union
 except ImportError:
-    sys.exit("needs ifcopenshell: cf-env\\Scripts\\python -m pip install ifcopenshell")
+    sys.exit('needs ifcopenshell: pip install -e ".[ifc]"')
 
 from ddsg_nav.graph.io import save_graph
 from ddsg_nav.graph.model import Box, Door, Room, SceneGraph, VoxelGrid, VoxelState, points_in_polygon
 
 SKIP_AS_OBSTACLE = ("IfcSpace", "IfcOpeningElement", "IfcDoor", "IfcVirtualElement", "IfcAnnotation", "IfcGrid")
+FLOOR_SKIP_M = 0.2  # solids start this far above the floor (floor finishes are not walls)
+MAX_EXTENT_M = 2000.0  # a storey wider than this means wrong units
+MIN_ROOM_M = 0.5  # a largest room smaller than this means wrong units
+
+
+class ConversionError(ValueError):
+    """The IFC cannot be converted. The message says what is wrong and what to do."""
 
 
 # ---- geometry ----------------------------------------------------------------
@@ -77,18 +94,25 @@ def _bary(n: int):
 
 def mark_surface(states: np.ndarray, origin: np.ndarray, res: float, v: np.ndarray, t: np.ndarray,
                  value: int) -> None:
-    """Set every voxel a triangle passes through (sampled at res/2) to `value`."""
+    """Set every voxel a triangle passes through (sampled at res/2) to `value`.
+
+    Samples sit a hair inside the solid (against the outward face normal, and away from
+    the triangle's edges), so a face or edge that lies exactly on a voxel boundary does
+    not mark the voxel outside it."""
     a, b, c = v[t[:, 0]], v[t[:, 1]], v[t[:, 2]]
+    normal = np.cross(b - a, c - a)
+    length = np.linalg.norm(normal, axis=1, keepdims=True)
+    inward = -1e-4 * normal / np.where(length > 0, length, 1.0)
     edge = np.max(np.stack([np.linalg.norm(b - a, axis=1), np.linalg.norm(c - a, axis=1),
                             np.linalg.norm(c - b, axis=1)]), axis=0)
     n = np.maximum(1, np.ceil(edge / (res / 2))).astype(int)
     shape = np.array(states.shape)
     for nv in np.unique(n):
         sel = np.nonzero(n == nv)[0]
-        u, w = _bary(int(nv))
+        u, w = (x * (1 - 3e-4) + 1e-4 for x in _bary(int(nv)))  # just inside the triangle
         for chunk in np.array_split(sel, max(1, len(sel) * len(u) // 2_000_000 + 1)):
             A, AB, AC = a[chunk], b[chunk] - a[chunk], c[chunk] - a[chunk]
-            p = A[:, None] + AB[:, None] * u[None, :, None] + AC[:, None] * w[None, :, None]
+            p = (A + inward[chunk])[:, None] + AB[:, None] * u[None, :, None] + AC[:, None] * w[None, :, None]
             idx = np.floor((p.reshape(-1, 3) - origin) / res + 1e-9).astype(int)
             ok = np.all((idx >= 0) & (idx < shape), axis=1)
             idx = idx[ok]
@@ -180,6 +204,35 @@ def solid_mask(grid: VoxelGrid, v: np.ndarray, t: np.ndarray) -> np.ndarray:
     return mask
 
 
+def voxel_solids(grid: VoxelGrid, occupied: np.ndarray, k_min: int) -> list[Box]:
+    """Boxes that cover exactly the occupied voxels from layer `k_min` up. Vertical runs
+    with the same z range are merged into rectangles, so a straight wall is one box."""
+    occ = occupied[:, :, k_min:]
+    edges = np.diff(np.pad(occ, ((0, 0), (0, 0), (1, 1))).astype(np.int8), axis=2)
+    i, j, k0 = np.nonzero(edges == 1)
+    k1 = np.nonzero(edges == -1)[2]  # same (i, j) order as the starts
+    o, res = np.array(grid.origin), grid.resolution
+    boxes = []
+    for z0, z1 in sorted({(int(p), int(q)) for p, q in zip(k0, k1)}):
+        m = np.zeros(occ.shape[:2], dtype=bool)
+        sel = (k0 == z0) & (k1 == z1)
+        m[i[sel], j[sel]] = True
+        for x0, y0 in np.argwhere(m):
+            if not m[x0, y0]:
+                continue  # already inside an earlier box
+            y1 = y0 + 1
+            while y1 < m.shape[1] and m[x0, y1]:
+                y1 += 1
+            x1 = x0 + 1
+            while x1 < m.shape[0] and m[x1, y0:y1].all():
+                x1 += 1
+            m[x0:x1, y0:y1] = False
+            lo = o + np.array([x0, y0, k_min + z0]) * res
+            hi = o + np.array([x1, y1, k_min + z1]) * res
+            boxes.append(Box(tuple(round(float(c), 6) for c in lo), tuple(round(float(c), 6) for c in hi)))
+    return boxes
+
+
 # ---- IFC -> graph --------------------------------------------------------------
 
 def door_width(door, scale: float) -> float:
@@ -190,32 +243,99 @@ def door_width(door, scale: float) -> float:
     return float(door.OverallWidth or 0.9 / scale) * scale
 
 
-def convert(path: str, storey_name: str, res: float, pad: float = 0.4,
+def open_ifc(path: str):
+    if not os.path.isfile(path):
+        raise ConversionError(f"{path} not found. Check the path to the .ifc file.")
+    try:
+        return ifcopenshell.open(path)
+    except Exception as e:
+        raise ConversionError(f"{path} cannot be read as IFC ({e}). Export it again as an IFC2x3 or IFC4 "
+                              f".ifc file.") from e
+
+
+def storey_spaces(storey) -> list:
+    """IfcSpace objects of a storey, whether aggregated under it or contained in it."""
+    found = [o for r in storey.IsDecomposedBy or [] for o in r.RelatedObjects]
+    found += [o for r in getattr(storey, "ContainsElements", None) or [] for o in r.RelatedElements]
+    return [o for o in found if o.is_a("IfcSpace")]
+
+
+def storey_label(storey) -> str:
+    return storey.Name or storey.GlobalId
+
+
+def storey_elevation(storey, scale: float) -> float:
+    """Storey level in meters: the Elevation attribute, or the placement height without it."""
+    if storey.Elevation is not None:
+        return float(storey.Elevation) * scale
+    return float(ifcopenshell.util.placement.get_storey_elevation(storey)) * scale
+
+
+def list_storeys(path: str) -> list[tuple[str, float, int]]:
+    """(name, elevation in meters, number of IfcSpace) for every storey, lowest first."""
+    f = open_ifc(path)
+    scale = ifcopenshell.util.unit.calculate_unit_scale(f)
+    rows = [(storey_label(s), storey_elevation(s, scale), len(storey_spaces(s)))
+            for s in f.by_type("IfcBuildingStorey")]
+    return sorted(rows, key=lambda r: r[1])
+
+
+def convert(path: str, storey_name: str, res: float = 0.1, pad: float = 0.4,
             min_open_m: float = 0.7, exclude: str | None = None) -> tuple[SceneGraph, list[str]]:
-    import ifcopenshell.util.unit as uu
-
-    f = ifcopenshell.open(path)
+    """Convert the storey called `storey_name` to a SceneGraph. Returns the graph and notes
+    on what was skipped or assumed. Raises ConversionError on input that cannot be used."""
+    f = open_ifc(path)
     notes: list[str] = []
-    scale = uu.calculate_unit_scale(f)  # file length unit -> meters
-    storeys = {s.Name: s for s in f.by_type("IfcBuildingStorey")}
+    scale = ifcopenshell.util.unit.calculate_unit_scale(f)  # file length unit -> meters
+    if abs(scale - 1.0) > 1e-9:
+        notes.append(f"length unit of the file is {scale:g} m; everything is converted to meters")
+    storeys = {storey_label(s): s for s in f.by_type("IfcBuildingStorey")}
+    available = ", ".join(f"{n} ({len(storey_spaces(s))} spaces)" for n, s in storeys.items()) or "none"
     if storey_name not in storeys:
-        raise SystemExit(f"storey {storey_name!r} not found; available: {', '.join(storeys)}")
+        raise ConversionError(f"storey {storey_name!r} is not in the file. Use one of these names with "
+                              f"--storey: {available}.")
     storey = storeys[storey_name]
-    z0 = float(storey.Elevation or 0.0) * scale
+    z0 = storey_elevation(storey, scale)
 
-    spaces = [o for r in storey.IsDecomposedBy or [] for o in r.RelatedObjects if o.is_a("IfcSpace")]
+    spaces = storey_spaces(storey)
+    if not spaces:
+        raise ConversionError(f"storey {storey_name!r} has no IfcSpace, and rooms come from IfcSpace. Pick a "
+                              f"storey that has spaces ({available}), or export the model again with "
+                              f"rooms/spaces included.")
     if exclude:
         dropped = [s.Name for s in spaces if re.search(exclude, s.Name or "")]
         spaces = [s for s in spaces if not re.search(exclude, s.Name or "")]
         notes.append(f"excluded spaces ({exclude}): {', '.join(dropped) or 'none'}")
-    if not spaces:
-        raise SystemExit(f"storey {storey_name} has no IfcSpace; rooms cannot be extracted")
+        if not spaces:
+            raise ConversionError(f"--exclude {exclude!r} removes every space of storey {storey_name!r}. "
+                                  f"Use a narrower pattern.")
+    # room ids: the space Name, made unique (GlobalId if a space has no name)
+    ids: dict[int, str] = {}
+    for sp in spaces:
+        rid, n = sp.Name or sp.GlobalId, 2
+        while rid in ids.values():
+            rid, n = f"{sp.Name}_{n}", n + 1
+        if rid != sp.Name:
+            notes.append(f"space {sp.GlobalId} has {'a duplicate name' if sp.Name else 'no name'}; "
+                         f"its room id is {rid}")
+        ids[sp.id()] = rid
 
     space_mesh = meshes(f, spaces)
+    if not space_mesh:
+        raise ConversionError(f"the {len(spaces)} spaces of storey {storey_name!r} have no 3D geometry. "
+                              f"Export the model again with space geometry (body representation).")
     shifted = {k: (v - [0, 0, z0], t) for k, (v, t) in space_mesh.items()}
 
     # grid extent: all spaces + padding
     allv = np.vstack([v for v, _ in shifted.values()])
+    extent = float((allv.max(axis=0) - allv.min(axis=0))[:2].max())
+    largest_room = max(float((v.max(axis=0) - v.min(axis=0))[:2].max()) for v, _ in shifted.values())
+    if extent > MAX_EXTENT_M or largest_room < MIN_ROOM_M:
+        raise ConversionError(
+            f"sizes are not plausible in meters: storey {storey_name!r} is {extent:g} m wide and its largest "
+            f"room {largest_room:g} m. The file declares its length unit as {scale:g} m, which is probably "
+            f"wrong (for example millimeters declared as meters). Fix the project units in the authoring "
+            f"tool and export again.")
     lo = np.floor((allv.min(axis=0) - pad) / res) * res
     hi = np.ceil((allv.max(axis=0) + pad) / res) * res
     lo[2] = min(lo[2], -2 * res)
@@ -243,23 +363,24 @@ def convert(path: str, storey_name: str, res: float, pad: float = 0.4,
     polys = {}
     free = np.zeros(grid.shape, dtype=bool)
     for sp in spaces:
+        rid = ids[sp.id()]
         if sp.id() not in shifted:
-            notes.append(f"space {sp.Name} has no geometry; skipped")
+            notes.append(f"space {rid} has no geometry; skipped")
             continue
         v, t = shifted[sp.id()]
         poly = footprint(v, t)
         if poly.geom_type == "MultiPolygon":
-            notes.append(f"space {sp.Name}: footprint has {len(poly.geoms)} parts; using the largest")
+            notes.append(f"space {rid}: footprint has {len(poly.geoms)} parts; using the largest")
             poly = max(poly.geoms, key=lambda p: p.area)
         poly = poly.simplify(0.005)
-        polys[sp.Name] = poly
+        polys[rid] = poly
         ln = (sp.LongName or "").strip()
         unique = ln and long_names[ln] == 1
         room = Room(
-            id=sp.Name,
-            name=ln if unique else sp.Name,
-            bounds=Box(tuple(v.min(axis=0)), tuple(v.max(axis=0))),
-            aliases=tuple(a for a in (sp.GlobalId, f"{sp.Name}호", f"{ln} {sp.Name}" if ln and not unique else None) if a),
+            id=rid,
+            name=ln if unique else rid,
+            bounds=Box(tuple(float(c) for c in v.min(axis=0)), tuple(float(c) for c in v.max(axis=0))),
+            aliases=tuple(a for a in (sp.GlobalId, f"{rid}호", f"{ln} {rid}" if ln and not unique else None) if a),
             polygon=tuple((round(x, 4), round(y, 4)) for x, y in list(poly.exterior.coords)[:-1]),
         )
         graph.add_room(room)
@@ -267,13 +388,24 @@ def convert(path: str, storey_name: str, res: float, pad: float = 0.4,
 
     # doors (via space boundaries); their openings become flyable
     door_free = np.zeros(grid.shape, dtype=bool)
+    storey_doors = unbounded = 0
     for d in f.by_type("IfcDoor"):
-        rooms = sorted({b.RelatingSpace.Name for b in d.ProvidesBoundaries or []
-                        if b.RelatingSpace.Name in graph.rooms})
+        bounded = [b.RelatingSpace for b in d.ProvidesBoundaries or [] if b.RelatingSpace is not None]
+        rooms = sorted({ids[sp.id()] for sp in bounded if ids.get(sp.id()) in graph.rooms})
+        if not rooms and ifcopenshell.util.element.get_container(d) != storey:
+            continue  # a door of another storey
+        storey_doors += 1
+        unbounded += not bounded
         if len(rooms) != 2:
-            what = "outside or an unmodelled space" if len(rooms) == 1 else "no space"
-            notes.append(f"door {d.Name.split(':')[-1]} ({d.GlobalId}) connects {rooms or 'nothing'} "
-                         f"to {what}; not a room connection")
+            label = f"door {(d.Name or 'unnamed').split(':')[-1]} ({d.GlobalId})"
+            if len(rooms) == 1:
+                notes.append(f"{label} leads from {rooms[0]} to outside or an unmodelled space; "
+                             f"not a room connection")
+            elif rooms:
+                notes.append(f"{label} has space boundaries to {len(rooms)} rooms ({', '.join(rooms)}); "
+                             f"expected 2, skipped")
+            else:
+                notes.append(f"{label} has no space boundary to a room of this storey; skipped")
             continue
         holes = [r.RelatingOpeningElement for r in d.FillsVoids or []]
         geo = meshes(f, holes or [d])
@@ -290,6 +422,11 @@ def convert(path: str, storey_name: str, res: float, pad: float = 0.4,
             door_id = f"door_{rooms[0]}_{rooms[1]}_{k}"
             k += 1
         graph.add_door(Door(door_id, rooms[0], rooms[1], (float(c[0]), float(c[1]), 1.0), door_width(d, scale)))
+    if storey_doors and unbounded == storey_doors:
+        raise ConversionError(
+            f"storey {storey_name!r} has {storey_doors} doors but none has a space boundary "
+            f"(IfcRelSpaceBoundary), so it is unknown which rooms each door connects. Export the IFC again "
+            f"with space boundaries switched on (Revit: IFC export setup, 'Space boundaries: 1st level').")
 
     # open connections: footprints that touch (no wall between the spaces). Pairs that
     # already have a door are skipped: their footprints often touch inside the doorway.
@@ -307,7 +444,7 @@ def convert(path: str, storey_name: str, res: float, pad: float = 0.4,
             if seg is None:
                 continue
             m = seg.interpolate(0.5, normalized=True)
-            graph.add_door(Door(f"open_{a}_{b}", a, b, (m.x, m.y, 1.0), round(seg.length, 2)))
+            graph.add_door(Door(f"open_{a}_{b}", a, b, (float(m.x), float(m.y), 1.0), round(seg.length, 2)))
             notes.append(f"open connection {a} <-> {b}: shared edge {seg.length:.2f} m (no wall)")
 
     # floor voids (atrium, stair well): no floor under a free column -> not flyable.
@@ -328,6 +465,7 @@ def convert(path: str, storey_name: str, res: float, pad: float = 0.4,
     states[free] = int(VoxelState.FREE)
     states[occupied] = int(VoxelState.OCCUPIED)
     grid.states[...] = states
+    graph.solids = voxel_solids(grid, occupied, grid.index((0.0, 0.0, FLOOR_SKIP_M))[2])
     notes.insert(0, f"storey {storey_name}: elevation {z0:.2f} m is z = 0; {len(obstacles)} obstacle elements")
     return graph, notes
 
@@ -341,12 +479,16 @@ def main() -> int:
     ap.add_argument("--exclude", default=None,
                     help=r'regex on space names to leave out, e.g. "^(PS|EPS|EV)\d" for shafts')
     a = ap.parse_args()
-    graph, notes = convert(a.ifc, a.storey, a.res, exclude=a.exclude)
+    try:
+        graph, notes = convert(a.ifc, a.storey, a.res, exclude=a.exclude)
+    except ConversionError as e:
+        print(f"cannot convert: {e}")
+        return 1
     save_graph(graph, a.folder)
     for n in notes:
         print("-", n)
-    print(f"saved {len(graph.rooms)} rooms, {len(graph.doors)} connections, voxels {graph.voxels.shape} "
-          f"to {a.folder}")
+    print(f"saved {len(graph.rooms)} rooms, {len(graph.doors)} connections, voxels {graph.voxels.shape}, "
+          f"{len(graph.solids)} solids to {a.folder}")
     return 0
 
 
