@@ -59,7 +59,9 @@ cf-env\Scripts\python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2
 
 ## Working together
 
-- Do not push to `main`. Make a branch, open a Pull Request, and run `pytest` first.
+Full rules (in Korean): **[CONTRIBUTING.md](CONTRIBUTING.md)**: roles, branch names, the PR flow.
+
+- Do not push to `main`. Make a branch (`feat/…`, `fix/…`, `docs/…`), open a Pull Request, and run `pytest` first. Seokmin merges all PRs.
 - **Never commit lab data** (graphs, IFC, point clouds). `data/` is ignored.
 - Keep `main` working: tests pass, scripts run from the repository root.
 
