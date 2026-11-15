@@ -16,5 +16,5 @@ jobs:
           cache: pip
       # open3d needs these system libraries on a headless runner
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libgomp1
-      - run: pip install -e ".[sim,viz,dev]"
+      - run: pip install -e ".[sim,viz,ifc,dev]"
       - run: pytest

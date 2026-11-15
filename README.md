@@ -67,6 +67,10 @@ pytest                      # 192 tests, under a minute, no drone needed
 python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to C"
 ```
 
+Real IFC: `pip install -e ".[ifc,sim]"`, then one command converts a storey, validates it, plans routes and flies them in simulation.
+`python scripts\ifc_pipeline.py model.ifc` lists the storeys; `python scripts\ifc_pipeline.py model.ifc --storey NAME` runs everything (graph in `data\NAME`).
+It exits with 0 only if every step passes with 0 wall contacts; each failure is printed with its reason and what to do.
+
 Real flights need a Crazyflie 2.1 with Flow deck v2 and a Crazyradio PA (libusb driver via Zadig).
 Optional LLM goal parsing: copy `.env.example` to `.env` and set `DDSG_LLM_API_KEY` (DeepSeek by default, any OpenAI-compatible API works).
 
