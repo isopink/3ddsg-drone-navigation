@@ -53,7 +53,7 @@ Windows, [Python 3.12](https://www.python.org/downloads/). Clone the repo, then 
 1. **`setup.bat`**: installs `cf-env` (first run only).
 2. **`experiment_terminal.bat`**: a terminal with the environment active. Fly from here.
 
-Command reference (Korean): `type scripts\manual.txt`
+Command reference: `type scripts\manual.txt`
 
 Manual setup:
 

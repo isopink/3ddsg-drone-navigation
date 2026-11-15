@@ -1,3 +1,2 @@
 *.bat text eol=crlf
 
-scripts/manual.txt text working-tree-encoding=CP949 eol=crlf

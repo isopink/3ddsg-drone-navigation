@@ -1,95 +1,40 @@
-==============================================================================
- 3DDSG 실기체 설명서  (Crazyflie 2.1 + Flow deck)
-==============================================================================
- 보는 법:   type scripts\manual.txt      (cmd, PowerShell 모두)
- 터미널:    experiment_terminal.bat 을 더블클릭해서 연 창에서 입력하세요.
- 모든 명령은 저장소 폴더에서, cf-env 가 켜진 상태로 실행합니다.
+3DDSG DRONE NAVIGATION - COMMANDS
+Run from the repo root in experiment_terminal.bat (cf-env active).
+All options of a script: python scripts\<name>.py --help
 
+FLY
+  fly_route.py "from A to B"       Plan a route and fly it.
+      --backend sim|crazyflie      Simulation (default) or the real drone.
+      --rooms 2 2  --depth 2       Virtual rooms: widths and depth in m.
+      --height 0.5                 Flight height above the floor in m.
+      --velocity 0.2               Speed in m/s. Above 0.3 is untested.
+      --margin 0.25                Distance kept from walls in m.
+      --max-deviation 0.5          Land if this far from the plan in m.
+      --yaw 0                      Real drone: nose direction in degrees from +x.
+      --uri radio://0/80/2M        Radio address.
+      --skip-dry-run               Real drone: skip the simulation check.
+    The real drone flies only after a clean simulation run. Ctrl+C lands.
 
-------------------------------------------------------------------------------
- 0. 준비 (처음 한 번)
-------------------------------------------------------------------------------
- 1) Python 3.12 설치
- 2) setup.bat 을 한 번 실행  ->  cf-env 가 만들어집니다.
- 3) 실제 드론을 쓸 때만:
+REAL-DRONE CHECKS (in this order)
+  check_sensors.py                 Read the sensors without flying.
+      --watch                      Live values until Ctrl+C.
+      --shake                      15 s vibration test in your hand.
+  prop_test.py                     Spin the propellers without take-off.
+  hover_test.py                    Take off, hover, fly forward, land.
+      --live                       Print motors, height, position, battery.
+      --distance 0                 Hover only.
+      --height, --velocity, --hover-time, --min-battery
 
-      pip install cfclient
+GRAPH
+  ifc_to_graph.py model.ifc out --storey 4F
+                                   Convert one IFC storey to a graph folder.
+  graph_tools.py export-fake out   Write the generated test graph.
+  graph_tools.py validate folder   Check a graph folder.
+  graph_tools.py route folder "from A to B"
+                                   Plan a route on a graph folder.
+  check_routes.py                  Collision check and Open3D view of routes.
 
-    Crazyradio PA 의 USB 드라이버는 Zadig 로 libusb 로 설치합니다.
-
-
-------------------------------------------------------------------------------
- 1. 실기체 비행 순서  (위에서부터 차례로)
-------------------------------------------------------------------------------
- [1] 센서 점검 (날지 않음)
-      python scripts\check_sensors.py
-      Flow deck 높이 센서가 멈춰 있으면 여기서 잡힙니다.
-      --watch  값을 계속 보여 줌 (Ctrl+C 로 종료)
-      --shake  드론을 손에 들고 15초 흔들어 보는 진동 테스트
-
- [2] 프로펠러 점검 (이륙 안 함)
-      python scripts\prop_test.py
-
- [3] 호버링과 전진
-      python scripts\hover_test.py --live
-      --live  모터 출력, 높이, 위치, 배터리를 초당 4번 표시
-      --velocity 0.1  앞으로 가는 속도 m/s (기본 0.2, 상한 없음, 0.3 넘으면 미검증)
-      제자리 호버링만 하려면:  --distance 0
-      지금까지 실제로 날려 본 유일한 코드입니다.
-
- [4] 시뮬레이션으로 먼저 돌려 보기
-      python scripts\fly_route.py --backend sim --rooms 2 2 --depth 2 "from A to B"
-
- [5] 실제 경로 비행
-      python scripts\fly_route.py --backend crazyflie --rooms 2 2 --depth 2 "from A to B"
-      시뮬레이션을 자동으로 먼저 돌리고, 벽에 닿으면 날기를 거부합니다.
-      비행 중 Ctrl+C = 착륙.
-
-
-------------------------------------------------------------------------------
- 2. 자주 쓰는 옵션
-------------------------------------------------------------------------------
- --uri radio://0/80/2M/E7E7E7E7E7
-        드론 주소. 기본값과 다르면 모든 스크립트에 지정하세요.
- --min-battery 3.4
-        (hover_test.py) 3.7V 미만에서도 날게 함. 경고가 나오고 하한은 3.3V.
- --height, --velocity
-        비행 높이와 속도. 처음에는 낮고 느리게 시작하세요.
- --max-deviation
-        계획 경로에서 이만큼 벗어나면 중단하고 착륙.
- --margin
-        벽과의 안전 여유. 기본 25cm.
- --skip-dry-run
-        (fly_route.py) 실제 비행 전 시뮬레이션을 건너뜀. 권장하지 않습니다.
-
-
-------------------------------------------------------------------------------
- 3. 전체 명령 목록   (앞에 python scripts\ 를 붙입니다)
-------------------------------------------------------------------------------
- fly_route.py           경로 계획 후 비행 (시뮬레이션, 실기체)
- check_sensors.py       날지 않고 센서 점검
- prop_test.py           프로펠러만 돌려 보기
- hover_test.py          호버링과 전진 비행 점검
- ifc_to_graph.py        IFC 건물 모델 한 층을 그래프 파일로 변환
- graph_tools.py         내보낸 그래프 검사 (validate <폴더>)
- check_routes.py        경로 충돌 검사와 Open3D 시각화
-
- 옵션 전체:  python scripts\<이름>.py --help
-
-
-------------------------------------------------------------------------------
- 4. 날리기 전에 확인  (어기면 추락할 수 있습니다)
-------------------------------------------------------------------------------
- * 밝은 방, 무늬 있는 바닥.
-   어두운 곳에서는 광학 흐름 센서가 실패해서 위치 추정이 틀어지고,
-   이미 한 번 추락했습니다. 유효 높이는 0.2 ~ 3.0 m.
- * 배터리 충전. 이륙에는 3.7V 가 필요합니다.
-   추락한 뒤에는 배터리, 프로펠러, deck 핀을 확인하세요.
- * 짧은 경로, 0.3 m/s 로 시작. 속도 상한도 0.3 m/s 입니다.
-   손을 키보드 가까이에 두세요.
- * 시뮬레이션은 센서 오차를 재현하지 못합니다.
-   통과해도 Flow deck 의 흔들림이나 고장은 실기체에서 나올 수 있습니다.
- * backends\crazyflie.py 는 실제 비행 검증을 거치지 않았습니다.
-   경로 비행은 아직 한 번도 날려 보지 않았습니다.
-
-==============================================================================
+LIMITS
+  Bright room, textured floor. Height 0.2 to 3.0 m.
+  Battery 3.7 V or more at take-off.
+  backends\crazyflie.py is not flight-tested yet.
