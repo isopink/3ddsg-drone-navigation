@@ -57,15 +57,6 @@ python scripts\fly_route.py --backend sim --rooms 2 2 2 --depth 2 "go from A to 
 Real flights need a Crazyflie 2.1 with Flow deck v2 and a Crazyradio PA (libusb driver via Zadig).
 Optional LLM goal parsing: copy `.env.example` to `.env` and set `DDSG_LLM_API_KEY` (DeepSeek by default, any OpenAI-compatible API works).
 
-## Before flying the real drone
-
-- **Bright room, textured floor.** In the dark the Flow deck fails and the drone crashes. Valid height is 0.2 to 3.0 m.
-- **Simulate first.** `--backend crazyflie` runs a dry run and refuses to fly if it touches a wall.
-- Start at **0.3 m/s** on a short route. Keep a hand near the drone. `Ctrl+C` lands it.
-- Battery at 3.7 V or more. After a crash, check the battery, propellers and deck pins.
-- The simulator has no sensor model: it does not reproduce Flow deck drift.
-- `backends/crazyflie.py` has not been flight-tested; only `scripts/hover_test.py` was flown.
-
 ## Layout
 
 ```
@@ -77,3 +68,12 @@ docs/           graph_format.md (graph exchange format), media/
 ```
 
 Never commit lab data (graphs, IFC, point clouds).
+
+## Before flying the real drone
+
+- **Bright room, textured floor.** In the dark the Flow deck fails and the drone crashes. Valid height is 0.2 to 3.0 m.
+- **Simulate first.** `--backend crazyflie` runs a dry run and refuses to fly if it touches a wall.
+- Start at **0.3 m/s** on a short route. Keep a hand near the drone. `Ctrl+C` lands it.
+- Battery at 3.7 V or more. After a crash, check the battery, propellers and deck pins.
+- The simulator has no sensor model: it does not reproduce Flow deck drift.
+- `backends/crazyflie.py` has not been flight-tested; only `scripts/hover_test.py` was flown.
