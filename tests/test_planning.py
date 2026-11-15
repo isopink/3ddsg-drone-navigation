@@ -116,7 +116,7 @@ def test_local_straight_line_free_space():
     grid = _open_grid()
     path = plan_voxel_path(grid, (0.5, 0.5, 0.5), (2.5, 2.5, 0.5), inflation_m=0.1)
     assert path[0] == (0.5, 0.5, 0.5) and path[-1] == (2.5, 2.5, 0.5)
-    assert len(path) == 2  # simplified to a single segment
+    assert path == [(0.5, 0.5, 0.5), (2.5, 0.5, 0.5), (2.5, 2.5, 0.5)]  # one corner, no diagonal
 
 
 def test_local_avoids_obstacle_with_margin():
@@ -141,15 +141,19 @@ def test_local_unknown_is_obstacle():
     assert path[-1] == (2.5, 1.5, 0.5)
 
 
-def test_local_does_not_cut_corners():
-    """A diagonal step may not squeeze between two blocked cells (which would clip a corner)."""
-    from ddsg_nav.planner.local_planner import _astar
+def assert_axis_aligned(path):
+    for p, q in zip(path, path[1:]):
+        assert sum(abs(p[i] - q[i]) > 1e-9 for i in range(3)) == 1, (p, q)
 
-    blocked = np.zeros((5, 5, 1), dtype=bool)
-    blocked[2, 1, 0] = True  # two cells touching only at a corner
-    blocked[1, 2, 0] = True
-    path = _astar(blocked, (1, 1, 0), (2, 2, 0))
-    assert len(path) > 2  # not a single diagonal step through the gap between them
+
+def test_local_paths_never_go_diagonally():
+    grid = _open_grid()
+    grid.fill_box(Box((1.4, 0.0, 0.0), (1.6, 2.0, 1.0)), VoxelState.OCCUPIED)
+    # start and goal are off the voxel centers on purpose
+    path = plan_voxel_path(grid, (0.52, 0.47, 0.5), (2.43, 0.58, 0.5), inflation_m=0.25)
+    assert path[0] == (0.52, 0.47, 0.5) and path[-1] == (2.43, 0.58, 0.5)
+    assert_axis_aligned(path)
+    assert len(path) <= 6  # a few corners, not a staircase
 
 
 def test_margin_voxels_is_exact_not_rounded_up():
@@ -172,6 +176,7 @@ def test_local_start_inside_obstacle_raises():
 
 def _assert_route_safe(graph, plan, inflation=0.25):
     blocked = blocked_mask(graph.voxels, inflation)
+    assert_axis_aligned(plan.waypoints)
     # sample along every segment
     for a, b in zip(plan.waypoints, plan.waypoints[1:]):
         n = max(1, int(np.linalg.norm(np.subtract(b, a)) / 0.05))
